@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: Codex Main (integration evidence and explicit commit only; implementation writer released)
-- Checkpoint: `6ec3204` — Implement DWNC sports matching MVP with design A. Prior drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T1 local MVP PASS. T3–T5 local implementation and required browser QA PASS; Main's final integration commit remains pending. Human product acceptance and release approval are separate.
+- Writer now: none
+- Checkpoint: `390be03` — Complete DWNC local community, sports records and share cards. MVP: `6ec3204`; drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
+- AI work: T1–T5 PASS; required local implementation, browser QA and feature commit complete. No remaining required AI work. Human product acceptance: UNVERIFIED pending review. Release approval: not requested.
 - User decision: A selected by user on 2026-09-30 (message “a”). Release approval: not requested.
 
 ## Requests and finite finish line
@@ -11,10 +11,10 @@
 | ID | User request / acceptance | Owner | Status | Evidence |
 |---|---|---|---|---|
 | T1 | Implement the DWNC brief: demo users, profiles, tennis/futsal/running, filter/create/apply/accept, results, today dashboard, ranking | design_preview → Codex Main integration | PASS | Local app at `http://127.0.0.1:4174/#/home`; final syntax and 7/7 domain tests PASS. Main's real browser critical journeys, all five pages at 390px, refresh, history, and console checks PASS. Human product acceptance is separate. |
-| T2 | Make three design drafts for the user to compare and decide | design_preview → Codex Main | PASS | Three drafts render at `http://127.0.0.1:4173/#a`, `#b`, `#c`. Syntax, desktop and mobile viewing, mouse/keyboard switching, direct hash navigation and toggle read-back PASS. User design acceptance remains separate. |
-| T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit pending. |
-| T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit pending. |
-| T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit pending. |
+| T2 | Make three design drafts for the user to compare and decide | design_preview → Codex Main | PASS | Three drafts render at `http://127.0.0.1:4173/#a`, `#b`, `#c`. Syntax, desktop and mobile viewing, mouse/keyboard switching, direct hash navigation and toggle read-back PASS. User selected A. |
+| T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit `390be03`. |
+| T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit `390be03`. |
+| T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit `390be03`. |
 
 ## Active goal finish line — 2026-09-30
 
@@ -49,7 +49,7 @@
 
 ## Resume
 
-T3–T5 implementation and browser QA are complete. Main performs final diff/staging check and explicit commit; no more feature work is queued. The app runs at 127.0.0.1:4174. Demo identities and records stay in this browser only; this is not real authentication or multi-device persistence. Real-data deployment remains outside authorization.
+T1–T5 implementation, required checks and commit are complete at `390be03`; no more feature work is queued. The app runs at 127.0.0.1:4174. Demo identities and records stay in this browser only; this is not real authentication or multi-device persistence. Real-data deployment remains outside authorization. Next optional work item is user experience review, recommended in a new chat with Claude Code / Opus because it assesses visual hierarchy and interaction quality. First message: “트래커 보고 DWNC A안의 화면과 사용감을 검토해줘. 변경은 제안부터 보여줘.” Do not create the chat or begin new work without a user request.
 
 ## T3–T5 final integration evidence — 2026-09-30
 
