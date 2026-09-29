@@ -1,0 +1,11 @@
+{
+  "name": "dwnc-local-demo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node dwnc-app/server.js",
+    "test": "node --test dwnc-app/domain.test.js",
+    "check": "node --check dwnc-app/domain.js && node --check dwnc-app/app.js && node --check dwnc-app/server.js && npm test"
+  }
+}
