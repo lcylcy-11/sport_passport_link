@@ -1,4 +1,5 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
+mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-30T10:00:00') });
 import assert from 'node:assert/strict';
 import * as v1 from './domain.js';
 import * as d from './extended-domain.js';
@@ -168,4 +169,65 @@ test('pending invitation reconciles with direct application and cancellation exp
   assert.equal(d.activityFor(state, 'minseo', day).some((item) => item.match.id === other.id), false);
   assert.equal(state.notifications.some((notice) => notice.userId === 'jihun' && notice.text.includes('취소')), true);
   assert.equal(d.validateV2(state), true);
+});
+
+
+test('daily notes reject malformed containers and preserve JSON round trips', () => {
+  const state = d.createExtendedSeed(day);
+  for (const notes of [[], { minseo: 'broken' }, { ghost: {} }, { minseo: [] }, { minseo: { '2026-02-30': 'bad' } }, { minseo: { [day]: 7 } }, { minseo: { [day]: 'x'.repeat(141) } }]) {
+    assert.equal(d.validateV2({ ...state, dailyNotes: notes }), false);
+  }
+  assert.throws(() => d.setDailyNote({ ...state, dailyNotes: [] }, 'minseo', day, 'lost'), { name: 'DomainError' });
+  const saved = d.setDailyNote(state, 'minseo', day, '오늘도 & <함께>');
+  const restored = JSON.parse(JSON.stringify(saved));
+  assert.equal(d.validateV2(restored), true);
+  assert.equal(restored.dailyNotes.minseo[day], '오늘도 & <함께>');
+});
+
+test('completed and cancelled matches close pending applications and invitations, including old v2', () => {
+  let { state, id } = d.makeMatch(d.createExtendedSeed(day), 'minseo', matchData, day);
+  state = d.requestMatch(state, id, 'jihun');
+  state = d.requestMatch(state, id, 'sua');
+  state = d.decideMatchRequest(state, id, 'minseo', 'jihun', 'accepted');
+  const done = d.saveResult(state, id, 'minseo', { attendedIds: ['minseo','jihun'], teamAIds: ['minseo'], scoreA: 6, scoreB: 4 });
+  assert.equal(done.matches.find(m => m.id === id).applications.find(a => a.userId === 'sua').closedReason, '운동 완료');
+  assert.equal(done.notifications.some(n => n.userId === 'sua' && n.route === `#/activity?match=${id}` && n.text.includes('종료')), true);
+  const legacy = structuredClone(done); legacy.matches.find(m => m.id === id).applications.find(a => a.userId === 'sua').status = 'pending';
+  const repaired = d.reconcileRequests(legacy);
+  assert.equal(repaired.matches.find(m => m.id === id).applications.find(a => a.userId === 'sua').closedReason, '운동 완료');
+  assert.deepEqual(d.reconcileRequests(repaired), repaired);
+  assert.equal(d.validateV2(repaired), true);
+  let other = d.makeMatch(d.createExtendedSeed(day), 'minseo', matchData, day);
+  other.state = d.inviteToMatch(other.state, other.id, 'minseo', 'jihun');
+  other.state = d.requestMatch(other.state, other.id, 'sua');
+  const cancelled = d.cancelMatch(other.state, other.id, 'minseo');
+  assert.equal(cancelled.invitations.at(-1).status, 'expired');
+  assert.equal(cancelled.matches[0].applications[0].closedReason, '자리 취소');
+  assert.equal(d.validateV2(cancelled), true);
+});
+
+test('eligibility shares exact end-time boundary across listing, requests, accept and invitations', () => {
+  const before = new Date('2026-09-30T20:59:00'), end = new Date('2026-09-30T21:00:00');
+  const { state, id } = d.makeMatch(d.createExtendedSeed(day), 'minseo', matchData, day);
+  const item = state.matches.find(m => m.id === id);
+  assert.equal(d.canRequestMatch(state, item, 'jihun', before), true);
+  assert.equal(d.canRequestMatch(state, item, 'minseo', before), false);
+  assert.equal(d.filterMatches(state, 'jihun', {openOnly:true}, end).some(m => m.id === id), false);
+  assert.throws(() => d.requestMatch(state, id, 'jihun', end), {name:'DomainError'});
+  assert.throws(() => d.requestMatch(state, id, 'jihun', new Date('2026-10-01T00:00:00')), {name:'DomainError'});
+  const pending = d.requestMatch(state, id, 'jihun', before);
+  assert.equal(d.canRequestMatch(pending, pending.matches[0], 'jihun', before), false);
+  assert.throws(() => d.decideMatchRequest(pending, id, 'minseo', 'jihun', 'accepted', end), {name:'DomainError'});
+  const invited = d.inviteToMatch(state, id, 'minseo', 'jihun', before);
+  assert.throws(() => d.decideInvitation(invited, invited.invitations.at(-1).id, 'jihun', 'accepted', end), {name:'DomainError'});
+  assert.throws(() => d.inviteToMatch(state, id, 'minseo', 'jihun', end), {name:'DomainError'});
+});
+
+test('selected-sport edits retain deselected profile data and historic records', () => {
+  const original = d.createExtendedSeed(day);
+  const edited = d.editProfile(original, 'minseo', {chosenSports:['running'], sports:{running:{experience:'3년',level:'중급',preference:'10km'}}});
+  assert.deepEqual(edited.users[0].sports.tennis, original.users[0].sports.tennis);
+  assert.deepEqual(edited.results, original.results);
+  assert.deepEqual(edited.users[0].chosenSports, ['running']);
+  assert.equal(d.validateV2(edited), true);
 });

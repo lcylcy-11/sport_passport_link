@@ -1,10 +1,10 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: none (T6 audit finished; report/tracker writing stopped)
-- Checkpoint: `390be03` — Complete DWNC local community, sports records and share cards. MVP: `6ec3204`; drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T1–T5 prior evidence retained. T6 audit PASS: T6-AUDIT.md contains seven findings (five P2, two P3), browser/Node evidence, three official-source alternatives and five prioritized next tasks. Findings remain FAIL until fixed; no application edits authorized or made. Human product acceptance: UNVERIFIED. Release approval: not requested.
-- User decision: A selected by user on 2026-09-30 (message “a”). Release approval: not requested.
+- Writer now: none
+- Checkpoint: T7 is the feature commit containing this closure (resolve with `git log -1 -- dwnc-app/mobile.css`); baseline `767fa75`. Prior feature `390be03`, MVP `6ec3204`, drafts `10652be`. Existing `submit-before/` remains unrelated and protected.
+- AI work: T7 implementation and required local checks PASS; audit F1–F7 fixed. No required AI work remains. Human experience/product acceptance UNVERIFIED; physical mobile devices UNVERIFIED. Release approval not requested.
+- User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
 
 ## Requests and finite finish line
 
@@ -15,7 +15,29 @@
 | T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit `390be03`. |
 | T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit `390be03`. |
 | T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit `390be03`. |
-| T6 | User: create an Astra chat in this project and audit code structure, UX, and the system's differentiation/competitiveness | Codex Astra audit chat | PASS | `T6-AUDIT.md`: code review at `8770ef4`, actual desktop/390px browser audit and QA lifecycle, three focused Node reproductions, three official-source alternatives checked 2026-09-30. Seven findings remain FAIL; human acceptance and actual model/effort metadata UNVERIFIED. App code unchanged. |
+| T7 | Audit F1–F7 fixes and mobile-first usability | Codex Main | PASS | 21/21 domain tests and syntax; real browser 320/390px all eight routes, 390px core lifecycle/drafts/context/notifications, 1280px regression; evidence below. Human acceptance and physical-device behavior UNVERIFIED. |
+| T6 | User: create an Astra chat in this project and audit code structure, UX, and the system's differentiation/competitiveness | Codex Astra audit chat | PASS | `T6-AUDIT.md`: code review at `8770ef4`, actual desktop/390px browser audit and QA lifecycle, three focused Node reproductions, three official-source alternatives checked 2026-09-30. Seven findings were FAIL at audit time and are fixed in T7; human acceptance and actual model/effort metadata UNVERIFIED. App code was unchanged during T6. |
+
+## T7 implementation and closure — 2026-09-30
+
+- User request: fix the audit findings and optimize for a primarily mobile platform. A visual direction retained; mobile-first use is the latest explicit user decision.
+- Finite deliverable: fix F1–F7, compact mobile discovery, readable/tappable controls, mobile dialogs, selected-sport profile editing, contextual return and notifications. Existing demo data preserved. No server/auth/deploy, privacy-policy change, new sport or market experiment.
+- Acceptance: focused domain regression tests; real browser at 390px and 320px, mobile core lifecycle, draft retention, profile return, notification detail, selected sports; desktop regression and no runtime errors. User visual acceptance remains separate.
+- Baseline/recovery: `767fa75`; revert explicit T7 feature commit if needed. Allowed: dwnc-app, root README/package, tracker. Protected: submit-before, design-preview, source brief.
+- Current model retained; no subagent because the shared UI/state work benefits from one implementation owner. Finish after tests, browser QA, docs and explicit-path commit; do not start another feature.
+
+- F1/F5 PASS: per-user/form in-tab drafts survive render/card previews and successful saves clear the submitted draft. Daily-note containers, dates and values are validated; malformed data is rejected without auto-reset. Tests cover original malformed forms and JSON round trips. Browser note/profile draft previews preserve edited strings; today preview includes the unsaved note.
+- F2 PASS: completed/cancelled matches close pending applications and invitations with a reason, including legacy v2 on load. Stored application state uses existing `rejected` plus `closedReason` for rollback compatibility. Reconciliation is idempotent. Browser completed QA match shows Sua's “운동 완료 · 신청 종료” and zero pending; accepted participant and results remain intact.
+- F3/F7 PASS: detail→profile→previous returns to the original match, scroll and opener focus; new match notices open a specific visible match. Browser verified applicant notification→correct match and completion notification→completed result. Old notices lacking an ID keep their existing destination.
+- F4 PASS: one eligibility helper excludes ended/completed/cancelled/full/own/already-applied matches. Request, acceptance and invitation guards share the displayed end-time boundary; focused tests prove before/exact-end/next-day behavior. Invite selector also excludes ended matches.
+- F6 PASS: only selected sports are editable. Browser Hanbyeol running-only editor, tennis show/hide and save verified; tests preserve deselected information and historical records.
+- Mobile PASS: compact sport selection and basic filters, expandable detailed filters, actionable empty state, 44px-or-larger main actions, 16px main inputs, bottom navigation, readable cards, single-column forms, mobile sheets, sticky form actions, safe-area CSS and background focus isolation. 320×844 and 390×844: all eight routes have scrollWidth equal to clientWidth; 320px create form fits. 390px real UI filters, creation→two applicants→one acceptance→6:4 result and remaining application closure verified.
+- Desktop PASS: 1280×900 home, matching, detail open/close and profile render without horizontal overflow. Final browser console errors: none. Final `npm run check`: PASS, syntax and 21/21 tests. Final diff whitespace/path checks recorded with the feature commit.
+- QA data: one fictional `T7 모바일 QA` at `가상 모바일 코트` for 2026-10-01 remains in this browser, with Minseo/Jihun result and Sua's closed application. It affects local demo statistics. Original data was preserved. Restored Minseo and matching page; temporary viewport override reset at handoff.
+- Screenshot: `C:/Users/USER/.codex/visualizations/2026/09/29/01a0ee56-2c15-76b1-b99d-95b34daa9834/t7-mobile-matches.png` (390px final matching page). Browser screenshots were visually inspected.
+- First-pass result: core flow rendered; rework included narrow-screen overflow and terminal-request storage compatibility. No independent model comparison or exact task-wide rework metric was recorded. No subagents used.
+- Changed paths: `dwnc-app/app.js`, `extended-domain.js`, `extended-domain.test.js`, `index.html`, new `mobile.css`, root `README.md`, this tracker. Protected paths unchanged. Recovery: revert only T7 feature commit; generated terminal application states remain readable by prior v2 code.
+- AI completion PASS after commit. Human taste/product acceptance and real-device iOS/Android keyboard/touch/safe-area behavior UNVERIFIED. No deployment or real account/data connection. Writer now: none; no further feature starts automatically.
 
 ## T6 audit handoff — 2026-09-30
 
@@ -59,7 +81,7 @@
 
 ## Resume
 
-T6 audit PASS. Read `T6-AUDIT.md` before new work. No further AI audit work remains. Findings F1–F7 are not fixed; implementation requires a new user request. Recommended next bounded task: F1/F5 input and storage preservation, Codex GPT-6 Sol / high, because UI draft state and persistence validation cross a state boundary with concrete reproductions. Prefer a new chat; suggested first message: “트래커와 T6-AUDIT.md를 보고 F1·F5 입력·저장 보존만 수정해줘. 앱 전체 재설계 없이 재현 검사를 추가하고, 실제 카드 미리보기에서 초안 보존을 확인해줘.” Do not create or start it automatically.
+T7 implementation and local verification PASS. No required AI task remains. T6 findings are historical and F1–F7 are superseded by the T7 fixes above. The next bounded task is a user-authorized mobile experience review, recommended Claude Code / Opus because it requires visual hierarchy and game/platform feel judgment. Prefer a new chat with: “트래커의 T7 결과를 보고 모바일 사용성만 검토해줘. 기존 A 방향을 유지하고, 동선과 시각적 개선안을 먼저 보여줘.” Do not create a chat or start new work automatically. Physical-device checks require an available actual device; browser viewport QA does not establish them.
 
 ## T6 audit closure — 2026-09-30
 

@@ -20,6 +20,8 @@ const validDistance = (value) => Number.isFinite(value) && value > 0 && value <=
 const sameSet = (left, right) => left.length === right.length && left.every((id) => right.includes(id));
 const nextId = (state, prefix) => { let id; do { id = `${prefix}-${state.nextId++}`; } while (state.matches.some((m) => m.id === id) || state.users.some((u) => u.id === id) || state.groups.some((g) => g.id === id) || state.friendRequests.some((r) => r.id === id) || state.invitations.some((i) => i.id === id) || state.notifications.some((n) => n.id === id)); return id; };
 const notify = (state, userId, text, route = '#/home') => state.notifications.unshift({ id: nextId(state, 'notice'), userId, text, route, read: false, at: new Date().toISOString() });
+const plainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+const matchRoute = (id) => `#/activity?match=${encodeURIComponent(id)}`;
 const validCode = (value) => /^DWNC-[A-Z0-9-]{3,30}$/.test(value);
 
 export function strictLegacy(state) {
@@ -66,7 +68,7 @@ export function createExtendedSeed(date = base.today()) {
 }
 
 export function validateV2(state) {
-  if (!state || state.version !== 2 || !Array.isArray(state.users) || !Array.isArray(state.matches) || !Array.isArray(state.results) || !Array.isArray(state.groups) || !Array.isArray(state.friendRequests) || !Array.isArray(state.invitations) || !Array.isArray(state.notifications) || !Array.isArray(state.ratings) || !state.dailyNotes || typeof state.dailyNotes !== 'object' || !Number.isInteger(state.nextId) || state.nextId < 1) return false;
+  if (!state || state.version !== 2 || !Array.isArray(state.users) || !Array.isArray(state.matches) || !Array.isArray(state.results) || !Array.isArray(state.groups) || !Array.isArray(state.friendRequests) || !Array.isArray(state.invitations) || !Array.isArray(state.notifications) || !Array.isArray(state.ratings) || !plainObject(state.dailyNotes) || !Number.isInteger(state.nextId) || state.nextId < 1) return false;
   const userIds = new Set(); const codes = new Set();
   for (const user of state.users) {
     if (!user || typeof user.id !== 'string' || !user.id || userIds.has(user.id) || typeof user.name !== 'string' || !user.name || typeof user.region !== 'string' || !user.region || typeof user.ageRange !== 'string' || typeof user.gender !== 'string' || typeof user.bio !== 'string' || !Number.isFinite(user.manner) || !AVATARS.includes(user.avatar) || !(user.photo === null || typeof user.photo === 'string' && user.photo.length <= 200000 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(user.photo)) || !validCode(user.friendCode) || codes.has(user.friendCode) || !Array.isArray(user.chosenSports) || !user.chosenSports.length || !sameSet(user.chosenSports, unique(user.chosenSports)) || user.chosenSports.some((sport) => !base.SPORTS.includes(sport)) || !user.sports) return false;
@@ -77,6 +79,10 @@ export function validateV2(state) {
     userIds.add(user.id); codes.add(user.friendCode);
   }
   if (!userIds.has(state.activeUserId)) return false;
+  for (const [userId, notes] of Object.entries(state.dailyNotes)) {
+    if (!userIds.has(userId) || !plainObject(notes)) return false;
+    for (const [date, text] of Object.entries(notes)) if (!validDate(date) || typeof text !== 'string' || text.length > 140) return false;
+  }
   const groupIds = new Set();
   for (const group of state.groups) {
     if (!group || typeof group.id !== 'string' || !group.id || groupIds.has(group.id) || !userIds.has(group.ownerId) || typeof group.name !== 'string' || !group.name || typeof group.region !== 'string' || typeof group.description !== 'string' || !Array.isArray(group.memberIds) || !group.memberIds.includes(group.ownerId) || !sameSet(group.memberIds, unique(group.memberIds)) || group.memberIds.some((id) => !userIds.has(id))) return false;
@@ -90,7 +96,7 @@ export function validateV2(state) {
     if (match.visibility !== 'group' && match.groupId !== null) return false;
     const applicants = new Set();
     for (const application of match.applications) {
-      if (!application || !userIds.has(application.userId) || application.userId === match.hostId || applicants.has(application.userId) || !['pending', 'accepted', 'rejected'].includes(application.status)) return false;
+      if (!application || !userIds.has(application.userId) || application.userId === match.hostId || applicants.has(application.userId) || !['pending', 'accepted', 'rejected', 'expired'].includes(application.status)) return false;
       applicants.add(application.userId);
     }
     if (ids(match).length > match.capacity) return false;
@@ -177,6 +183,40 @@ export function canViewMatch(state, match, userId) {
   return Boolean(gid(state, match.groupId)?.memberIds.includes(userId));
 }
 export function visibleMatches(state, userId) { return state.matches.filter((match) => canViewMatch(state, match, userId)); }
+// Shared eligibility for discovery, detail buttons and mutations.
+export function recruitmentClosed(match, now = new Date()) {
+  if (!match) return true;
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  return match.date < day || match.date === day && match.endTime <= time;
+}
+export function canRequestMatch(state, match, userId, now = new Date()) {
+  return canViewMatch(state, match, userId) && match.status === 'open' &&
+    !base.isCompleted(state, match.id) && !recruitmentClosed(match, now) &&
+    match.hostId !== userId && !match.applications.some(a => a.userId === userId) && base.openSeats(match) > 0;
+}
+function closePending(state, match, reason) {
+  for (const application of match.applications.filter(a => a.status === 'pending')) {
+    application.status = 'rejected';
+    application.closedReason = reason;
+    notify(state, application.userId, `${match.title}: ${reason}로 신청이 종료됐습니다.`, matchRoute(match.id));
+  }
+  for (const invitation of state.invitations.filter(i => i.matchId === match.id && i.status === 'pending')) {
+    invitation.status = 'expired';
+    notify(state, invitation.toId, `${match.title}: ${reason}로 초대가 종료됐습니다.`, matchRoute(match.id));
+  }
+}
+export function reconcileRequests(state) {
+  const next = clone(state);
+  for (const match of next.matches) {
+    for (const application of match.applications) if (application.status === 'expired') {
+      application.status = 'rejected'; application.closedReason ||= match.status === 'cancelled' ? '자리 취소' : '운동 완료';
+    }
+    if (match.status === 'cancelled' || base.isCompleted(next, match.id))
+      closePending(next, match, match.status === 'cancelled' ? '자리 취소' : '운동 완료');
+  }
+  return next;
+}
 export function makeMatch(state, hostId, data, date = base.today()) {
   const sport = clean(data.sport), format = clean(data.format) || formatFor(sport), visibility = clean(data.visibility) || 'public';
   if (!base.SPORTS.includes(sport) || !VISIBILITY.includes(visibility) || format !== formatFor(sport) && !(sport === 'tennis' && format === 'doubles')) fail('종목, 방식 또는 공개 범위를 확인해 주세요.');
@@ -190,55 +230,57 @@ export function makeMatch(state, hostId, data, date = base.today()) {
   match.capacity = capacity; match.format = format; match.visibility = visibility; match.groupId = groupId; match.status = 'open';
   return made;
 }
-export function requestMatch(state, matchId, userId) {
+export function requestMatch(state, matchId, userId, now = new Date()) {
   const match = mid(state, matchId);
   if (!canViewMatch(state, match, userId)) fail('볼 수 없는 운동 자리입니다.');
   if (match.status !== 'open') fail('취소된 운동 자리에는 신청할 수 없습니다.');
+  if (recruitmentClosed(match, now)) fail('모집 시간이 종료된 운동입니다. 다른 자리를 찾아 주세요.');
   const next = base.applyToMatch(state, matchId, userId);
   const invitation = next.invitations.find((item) => item.matchId === matchId && item.toId === userId && item.status === 'pending');
-  if (invitation) { invitation.status = 'accepted'; mid(next, matchId).applications.find((a) => a.userId === userId).status = 'accepted'; notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title} 초대를 수락했습니다.`, '#/activity'); }
-  else notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title}에 신청했습니다.`, '#/activity');
+  if (invitation) { invitation.status = 'accepted'; mid(next, matchId).applications.find((a) => a.userId === userId).status = 'accepted'; notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title} 초대를 수락했습니다.`, matchRoute(match.id)); }
+  else notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title}에 신청했습니다.`, matchRoute(match.id));
   return next;
 }
-export function decideMatchRequest(state, matchId, hostId, applicantId, decision) {
+export function decideMatchRequest(state, matchId, hostId, applicantId, decision, now = new Date()) {
   const match = mid(state, matchId); if (!match || match.status !== 'open') fail('취소된 운동 자리입니다.');
+  if (decision === 'accepted' && recruitmentClosed(match, now)) fail('모집 시간이 종료된 운동입니다.');
   const next = base.decideApplication(state, matchId, hostId, applicantId, decision);
   for (const invitation of next.invitations.filter((item) => item.matchId === matchId && item.toId === applicantId && item.status === 'pending')) invitation.status = decision === 'accepted' ? 'accepted' : 'declined';
-  notify(next, applicantId, `${match.title} 참여 신청이 ${decision === 'accepted' ? '수락' : '거절'}됐습니다.`, '#/activity'); return next;
+  notify(next, applicantId, `${match.title} 참여 신청이 ${decision === 'accepted' ? '수락' : '거절'}됐습니다.`, matchRoute(match.id)); return next;
 }
 export function withdrawMatch(state, matchId, userId) {
   const next = clone(state); const match = mid(next, matchId);
   if (!match || match.hostId === userId || base.isCompleted(next, matchId) || match.status !== 'open') fail('이 자리에서는 신청을 철회할 수 없습니다.');
   const index = match.applications.findIndex((a) => a.userId === userId && ['pending', 'accepted'].includes(a.status));
   if (index < 0) fail('철회할 신청이 없습니다.');
-  match.applications.splice(index, 1); notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title} 참여를 철회했습니다.`, '#/activity'); return next;
+  match.applications.splice(index, 1); notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title} 참여를 철회했습니다.`, matchRoute(match.id)); return next;
 }
 export function cancelMatch(state, matchId, hostId) {
   const next = clone(state); const match = mid(next, matchId);
   if (!match || match.hostId !== hostId || match.status !== 'open' || base.isCompleted(next, matchId)) fail('모집자만 완료 전 자리를 취소할 수 있습니다.');
   match.status = 'cancelled';
-  const affected = unique([...match.applications.filter((a) => a.status === 'pending' || a.status === 'accepted').map((a) => a.userId), ...next.invitations.filter((i) => i.matchId === matchId && i.status === 'pending').map((i) => i.toId)]);
-  next.invitations.filter((i) => i.matchId === matchId && i.status === 'pending').forEach((i) => { i.status = 'expired'; });
-  for (const id of affected) notify(next, id, `${match.title} 운동 자리가 취소됐습니다.`, '#/activity');
+  closePending(next, match, '자리 취소');
+  const affected = match.applications.filter(a => a.status === 'accepted').map(a => a.userId);
+  for (const id of affected) notify(next, id, `${match.title} 운동 자리가 취소됐습니다.`, matchRoute(match.id));
   return next;
 }
-export function inviteToMatch(state, matchId, fromId, toId) {
+export function inviteToMatch(state, matchId, fromId, toId, now = new Date()) {
   const next = clone(state); const match = mid(next, matchId);
-  if (!match || match.hostId !== fromId || match.status !== 'open' || base.isCompleted(next, matchId) || !uid(next, toId) || !friendsOf(next, fromId).includes(toId) || !canViewMatch(next, match, toId) || !base.openSeats(match) || match.applications.some((a) => a.userId === toId)) fail('이 친구를 해당 운동에 초대할 수 없습니다.');
+  if (!match || recruitmentClosed(match, now) || match.hostId !== fromId || match.status !== 'open' || base.isCompleted(next, matchId) || !uid(next, toId) || !friendsOf(next, fromId).includes(toId) || !canViewMatch(next, match, toId) || !base.openSeats(match) || match.applications.some((a) => a.userId === toId)) fail('이 친구를 해당 운동에 초대할 수 없습니다.');
   if (next.invitations.some((i) => i.matchId === matchId && i.toId === toId && i.status === 'pending')) fail('이미 초대한 친구입니다.');
   const id = nextId(next, 'invite'); next.invitations.push({ id, matchId, fromId, toId, status: 'pending' });
   notify(next, toId, `${uid(next, fromId).name}님이 ${match.title}에 초대했습니다.`, '#/people'); return next;
 }
-export function decideInvitation(state, invitationId, userId, decision) {
+export function decideInvitation(state, invitationId, userId, decision, now = new Date()) {
   const next = clone(state); const invitation = next.invitations.find((item) => item.id === invitationId);
   if (!invitation || invitation.toId !== userId || invitation.status !== 'pending' || !['accepted', 'declined'].includes(decision)) fail('처리할 수 없는 운동 초대입니다.');
   const match = mid(next, invitation.matchId);
   if (decision === 'accepted') {
-    if (!match || match.status !== 'open' || base.isCompleted(next, match.id) || !canViewMatch(next, match, userId) || !base.openSeats(match) || match.applications.some((a) => a.userId === userId)) fail('이 초대는 더 이상 수락할 수 없습니다.');
+    if (!match || recruitmentClosed(match, now) || match.status !== 'open' || base.isCompleted(next, match.id) || !canViewMatch(next, match, userId) || !base.openSeats(match) || match.applications.some((a) => a.userId === userId)) fail('이 초대는 더 이상 수락할 수 없습니다.');
     match.applications.push({ userId, status: 'accepted' });
   }
   invitation.status = decision;
-  notify(next, invitation.fromId, `${uid(next, userId).name}님이 ${match.title} 초대를 ${decision === 'accepted' ? '수락' : '거절'}했습니다.`, '#/activity');
+  notify(next, invitation.fromId, `${uid(next, userId).name}님이 ${match.title} 초대를 ${decision === 'accepted' ? '수락' : '거절'}했습니다.`, matchRoute(match.id));
   return next;
 }
 
@@ -280,7 +322,8 @@ export function saveResult(state, matchId, actorId, data) {
     result.entries = entries; result.reviews = reviews;
   }
   next.results.push(result);
-  for (const id of attendedIds.filter((id) => id !== actorId)) notify(next, id, `${match.title} 결과가 기록됐습니다.`, '#/activity');
+  closePending(next, match, '운동 완료');
+  for (const id of attendedIds.filter((id) => id !== actorId)) notify(next, id, `${match.title} 결과가 기록됐습니다.`, matchRoute(match.id));
   return next;
 }
 export function rateParticipant(state, matchId, fromId, toId, value) {
@@ -288,7 +331,7 @@ export function rateParticipant(state, matchId, fromId, toId, value) {
   const rating = Number(value);
   if (!result || !result.attendedIds.includes(fromId) || !result.attendedIds.includes(toId) || fromId === toId || !Number.isInteger(rating) || rating < 1 || rating > 5) fail('실제 함께 운동한 다른 참가자에게 1~5점을 남길 수 있습니다.');
   if (next.ratings.some((item) => item.matchId === matchId && item.fromId === fromId && item.toId === toId)) fail('이미 이 참가자를 평가했습니다.');
-  next.ratings.push({ matchId, fromId, toId, value: rating }); notify(next, toId, `${uid(next, fromId).name}님이 함께한 운동의 매너 평가를 남겼습니다.`, '#/profile'); return next;
+  next.ratings.push({ matchId, fromId, toId, value: rating }); notify(next, toId, `${uid(next, fromId).name}님이 함께한 운동의 매너 평가를 남겼습니다.`, matchRoute(matchId)); return next;
 }
 export function mannerFor(state, userId) {
   const user = uid(state, userId); if (!user) return 0;
@@ -297,6 +340,7 @@ export function mannerFor(state, userId) {
 }
 export function setDailyNote(state, userId, date, text) {
   if (!uid(state, userId) || !validDate(date) || clean(text).length > 140) fail('오늘의 한 줄은 140자 이내로 적어 주세요.');
+  if (!plainObject(state.dailyNotes) || (Object.hasOwn(state.dailyNotes, userId) && !plainObject(state.dailyNotes[userId]))) fail('오늘 기록의 저장 형식이 올바르지 않습니다.');
   const next = clone(state); next.dailyNotes[userId] ||= {}; next.dailyNotes[userId][date] = clean(text); return next;
 }
 export function markNoticeRead(state, noticeId, userId) {
@@ -340,7 +384,7 @@ export function groupSummary(state, groupId, scope = {}) {
   const tennis = results.filter((result) => result.sport === 'tennis' && !result.noContest);
   return { games: results.length, futsalGames: futsal.length, futsalWins: futsal.filter((result) => result.teamOutcome === 'win').length, futsalWinRate: futsal.length ? Math.round(100 * futsal.filter((result) => result.teamOutcome === 'win').length / futsal.length) : 0, tennisInternalGames: tennis.length, mvp: futsal.length ? futsal.map((result) => result.mvpUserId).filter(Boolean).length : 0 };
 }
-export function filterMatches(state, userId, filters = {}) {
+export function filterMatches(state, userId, filters = {}, now = new Date()) {
   const query = clean(filters.query).toLocaleLowerCase();
   return visibleMatches(state, userId).filter((match) => {
     if (match.status === 'cancelled' && !filters.includeCancelled) return false;
@@ -351,7 +395,7 @@ export function filterMatches(state, userId, filters = {}) {
     if (filters.date && match.date !== filters.date) return false;
     if (filters.level && filters.level !== '무관' && match.level !== '무관' && match.level !== filters.level) return false;
     if (filters.time && (filters.time === 'morning' ? match.startTime >= '12:00' : filters.time === 'afternoon' ? match.startTime < '12:00' || match.startTime >= '18:00' : match.startTime < '18:00')) return false;
-    if (filters.openOnly && (!base.openSeats(match) || base.isCompleted(state, match.id) || match.status === 'cancelled')) return false;
+    if (filters.openOnly && !canRequestMatch(state, match, userId, now)) return false;
     if (filters.minOpenSeats && base.openSeats(match) < Number(filters.minOpenSeats)) return false;
     if (query && !`${match.title} ${match.region} ${match.venue} ${match.description}`.toLocaleLowerCase().includes(query)) return false;
     return true;
