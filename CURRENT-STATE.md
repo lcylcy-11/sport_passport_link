@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: Codex Main (final verified checkpoint integration)
-- Checkpoint: `39247fc` tracker / `10652be` three design drafts. Existing `submit-before/` remains unrelated and protected.
-- AI work: T1 functional local MVP implementation and required verification PASS; commit integration pending.
+- Writer now: none
+- Checkpoint: `6ec3204` — Implement DWNC sports matching MVP with design A. Prior drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
+- AI work: T1 functional local MVP implementation and required verification PASS; committed. No required AI work remains.
 - User decision: A selected by user on 2026-09-30 (message “a”). Release approval: not requested.
 
 ## Requests and finite finish line
