@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: Codex Main (final QA evidence and commit)
-- Checkpoint: root repository has no commits; existing `submit-before/` is an unrelated nested project and is protected.
-- AI work: three reviewable design directions complete; checkpoint commit pending.
+- Writer now: none
+- Checkpoint: `10652be` — Add three DWNC home design concepts for review. Existing `submit-before/` remains unrelated, untracked by this root repository, and protected.
+- AI work: three reviewable design directions complete and committed. No required T2 AI work remains.
 - Product acceptance: awaits user selection. Release approval: not requested.
 
 ## Requests and finite finish line
@@ -44,6 +44,7 @@ T2 is ready for user design review. Keep T1 blocked until the user chooses A/B/C
 - Direct C-to-A hash navigation after listener fix: hash #a, title DWNC — 시안 A, only concept-a visible.
 - Final mobile toggle: aria-pressed true/false; scrollY stays 0; shell top 112 is below toolbar bottom 88. Header is no longer covered.
 - Browser console errors: none. Content buttons remain illustrative as disclosed in page and README; no application functionality PASS claim.
+- Final staged diff check PASS; feature commit includes exactly the 10 new DWNC coordination/preview paths. No existing project files staged. Commit-only author Codex / codex@local.invalid used because no author identity was configured; no Git configuration changed.
 
 ## design_preview writer checkpoint — 2026-09-30
 
