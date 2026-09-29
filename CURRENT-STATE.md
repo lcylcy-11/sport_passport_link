@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: none
+- Writer now: none (T6 audit finished; report/tracker writing stopped)
 - Checkpoint: `390be03` — Complete DWNC local community, sports records and share cards. MVP: `6ec3204`; drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T1–T5 PASS; required local implementation, browser QA and feature commit complete. No remaining required AI work. Human product acceptance: UNVERIFIED pending review. Release approval: not requested.
+- AI work: T1–T5 prior evidence retained. T6 audit PASS: T6-AUDIT.md contains seven findings (five P2, two P3), browser/Node evidence, three official-source alternatives and five prioritized next tasks. Findings remain FAIL until fixed; no application edits authorized or made. Human product acceptance: UNVERIFIED. Release approval: not requested.
 - User decision: A selected by user on 2026-09-30 (message “a”). Release approval: not requested.
 
 ## Requests and finite finish line
@@ -15,6 +15,16 @@
 | T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit `390be03`. |
 | T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit `390be03`. |
 | T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit `390be03`. |
+| T6 | User: create an Astra chat in this project and audit code structure, UX, and the system's differentiation/competitiveness | Codex Astra audit chat | PASS | `T6-AUDIT.md`: code review at `8770ef4`, actual desktop/390px browser audit and QA lifecycle, three focused Node reproductions, three official-source alternatives checked 2026-09-30. Seven findings remain FAIL; human acceptance and actual model/effort metadata UNVERIFIED. App code unchanged. |
+
+## T6 audit handoff — 2026-09-30
+
+- New explicit user request supersedes the former optional Claude/Opus review recommendation. Create one user-visible local chat in the saved DWNC project with `gpt-6-astra`, reasoning `medium`; no worktree or host configuration change.
+- Finite deliverable: one Korean audit report covering (1) code boundaries/state/persistence/test quality, (2) actual desktop/mobile UX and core journeys, and (3) differentiation and competitiveness against a small set of directly relevant current alternatives using primary sources. Distinguish observed defects, product hypotheses and production-readiness gaps; do not treat local-demo constraints as undisclosed implementation defects.
+- Acceptance: evidence-backed prioritized findings with exact file/line or reproducible UI steps, user impact and recommended next action; competitor sources and access dates; strongest assets, top risks and a short ordered improvement plan. Unknown claims remain UNVERIFIED. No automatic product redesign, refactor, deployment or external account/data connection.
+- Ownership: outgoing Main writes only this coordination record, then stops. Incoming audit chat may write an audit report and this tracker after checking ownership; application code stays read-only. Baseline HEAD `8770ef4f161b0f05190f8d7e2e8a6cde5af2c66b`; the only handoff dirty file is `CURRENT-STATE.md` with T6 intake. Untracked `submit-before/` is unrelated and must not be inspected, modified or staged. Preserve `design-preview/` and existing local demo data.
+- Evidence sources: original `C:/Users/USER/Documents/카카오톡 받은 파일/DWNC.md`, root AGENTS/README, existing T1–T5 evidence, and app at `http://127.0.0.1:4174/#/home`. Prior passing checks may be reused; run focused checks only to resolve a concrete audit claim.
+- Stop condition: report and evidence saved, T6 tracker updated, writer released, findings delivered in the new chat. Findings are proposals; fixes require a subsequent user request. Main dispatching this review does not itself claim the audit has passed.
 
 ## Active goal finish line — 2026-09-30
 
@@ -49,7 +59,19 @@
 
 ## Resume
 
-T1–T5 implementation, required checks and commit are complete at `390be03`; no more feature work is queued. The app runs at 127.0.0.1:4174. Demo identities and records stay in this browser only; this is not real authentication or multi-device persistence. Real-data deployment remains outside authorization. Next optional work item is user experience review, recommended in a new chat with Claude Code / Opus because it assesses visual hierarchy and interaction quality. First message: “트래커 보고 DWNC A안의 화면과 사용감을 검토해줘. 변경은 제안부터 보여줘.” Do not create the chat or begin new work without a user request.
+T6 audit PASS. Read `T6-AUDIT.md` before new work. No further AI audit work remains. Findings F1–F7 are not fixed; implementation requires a new user request. Recommended next bounded task: F1/F5 input and storage preservation, Codex GPT-6 Sol / high, because UI draft state and persistence validation cross a state boundary with concrete reproductions. Prefer a new chat; suggested first message: “트래커와 T6-AUDIT.md를 보고 F1·F5 입력·저장 보존만 수정해줘. 앱 전체 재설계 없이 재현 검사를 추가하고, 실제 카드 미리보기에서 초안 보존을 확인해줘.” Do not create or start it automatically.
+
+## T6 audit closure — 2026-09-30
+
+- Deliverable: `T6-AUDIT.md`, Korean report covering code, UX, current alternatives, evidence limits and five ordered recommendations. Requested model `gpt-6-astra / medium`; independent runtime metadata UNVERIFIED. No subagents used.
+- Source checkpoint: HEAD `8770ef4f161b0f05190f8d7e2e8a6cde5af2c66b`, feature `390be03`. Audit checkpoint is the commit containing this closure and `T6-AUDIT.md` (resolve with `git log -1 -- T6-AUDIT.md`); app files unchanged.
+- Browser evidence: desktop home/matching/profile and 390×844 core path. Created one fictional `T6 감사 QA 단식` at `가상 QA 코트`: Minseo hosted, Jihun applied, Minseo accepted, 6:4 result saved and reflected in today/card. The QA match and its notifications remain in local data and affect statistics. Existing data was not reset. Returned to Minseo/home; viewport reset. Console errors captured: none.
+- Focused defects reproduced: unsaved note lost on card preview; match profile closes to list; all-sport editor for running-only user; notification opens whole activity list; Node proves completed-match pending applicant dead end, past-date application, malformed dailyNotes accepted/JSON data loss. Five P2 and two P3; no fixes in audit scope.
+- Prior 17/17 domain test and previous friend/group/onboarding/migration/download evidence reused at unchanged code, not falsely reported as rerun. Actual storage quota/denial, atomic simultaneous writes, physical mobile, assistive technology and market outcomes UNVERIFIED.
+- Official alternatives: Plab Football, Strava, BAND. Strava official documentation directly opened; Plab/BAND official-domain search text available but direct fetch denied. No market/user-count claims inferred.
+- First-pass audit: PASS as a bounded evidence-backed deliverable; implementation rework: 0 (not authorized). Cost/usage and model comparison UNVERIFIED. Human experience/product acceptance remains separate; release not requested.
+- Changed paths only `T6-AUDIT.md`, `CURRENT-STATE.md`. Screenshot evidence stored outside repo in the authorized visualization directory and linked in the report. Protected `submit-before/` and `design-preview/` untouched. Recovery: revert only the audit docs commit if required.
+- Writer now: none. Stop condition met after report/tracker verification and explicit-path commit; no automatic fixes, further audit, deployment or messages to another chat.
 
 ## T3–T5 final integration evidence — 2026-09-30
 
