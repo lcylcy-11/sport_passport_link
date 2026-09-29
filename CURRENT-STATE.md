@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-09-30, Codex
-- Writer now: none
+- Writer now: Codex Main (integration evidence and explicit commit only; implementation writer released)
 - Checkpoint: `6ec3204` — Implement DWNC sports matching MVP with design A. Prior drafts: `10652be`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T1 functional local MVP implementation and required verification PASS; committed. No required AI work remains.
+- AI work: T1 local MVP PASS. T3–T5 local implementation and required browser QA PASS; Main's final integration commit remains pending. Human product acceptance and release approval are separate.
 - User decision: A selected by user on 2026-09-30 (message “a”). Release approval: not requested.
 
 ## Requests and finite finish line
@@ -12,6 +12,19 @@
 |---|---|---|---|---|
 | T1 | Implement the DWNC brief: demo users, profiles, tennis/futsal/running, filter/create/apply/accept, results, today dashboard, ranking | design_preview → Codex Main integration | PASS | Local app at `http://127.0.0.1:4174/#/home`; final syntax and 7/7 domain tests PASS. Main's real browser critical journeys, all five pages at 390px, refresh, history, and console checks PASS. Human product acceptance is separate. |
 | T2 | Make three design drafts for the user to compare and decide | design_preview → Codex Main | PASS | Three drafts render at `http://127.0.0.1:4173/#a`, `#b`, `#c`. Syntax, desktop and mobile viewing, mouse/keyboard switching, direct hash navigation and toggle read-back PASS. User design acceptance remains separate. |
+| T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit pending. |
+| T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit pending. |
+| T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit pending. |
+
+## Active goal finish line — 2026-09-30
+
+- Authority: tool-confirmed active user goal “끝까지 완벽하게 구현해”; A is the approved design. T1's former optional-feature exclusion is superseded for the local product flows T3–T5.
+- Finite deliverable: complete the original brief's core sections 4–6 for tennis/futsal/running in the existing local app, including community and image exports. Retain demo user selection, explicitly supported by section 7. Section 9 future possibilities (additional sports, external exercise/map/weather/reservation services, leagues) are not launch requirements. Region/venue exploration satisfies section 6's map-or-region alternative.
+- Required checks: safe v1 migration preserving edited data; visibility/authorization at domain level; new domain lifecycles and negative cases; existing checks; actual browser friend/invite/group/private match/doubles/attendance/note/share/profile journeys; desktop/mobile with no overflow or runtime errors. Human taste/acceptance remains separate; release is not requested.
+- Recovery: baseline 3dc0f1a; preserve existing browser data with migration, never silently reset it. Protected paths unchanged. Revert explicit feature commits to recover code.
+- Scope: dwnc-app/**, root package.json/README.md and this tracker. Main coordinates and performs independent read-only QA; design_preview is the sole implementation writer. Independent audit may read but never write.
+- Stop: T3–T5 implementation and required checks PASS, explicit paths committed, tracker records evidence and Writer now none. No speculative extra audit or future integrations.
+- Dispatch settings: retain existing implementation owner (requested gpt-6-sol/medium, execution metadata UNVERIFIED); independent bounded read-only review inherits current model. Existing owner avoids duplicated implementation context.
 
 ## Authority and scope
 
@@ -36,7 +49,33 @@
 
 ## Resume
 
-T1 is implemented and verified with selected design A at 127.0.0.1:4174; the server remains running. Demo identities and records stay in this browser only, with an explicit local-demo notice; this is not real authentication or multi-device persistence. No required AI implementation remains. Next is user experience review of the completed local MVP; do not add optional groups/friends/maps/sharing/external APIs or deploy without a new user request. Keep all feedback/fixes with the current implementation owner.
+T3–T5 implementation and browser QA are complete. Main performs final diff/staging check and explicit commit; no more feature work is queued. The app runs at 127.0.0.1:4174. Demo identities and records stay in this browser only; this is not real authentication or multi-device persistence. Real-data deployment remains outside authorization.
+
+## T3–T5 final integration evidence — 2026-09-30
+
+- Main independently ran final `npm run check`: PASS, exit 0, syntax and all 17 domain tests. Final code matches the released implementation checkpoint. Real browser app entry and all eight routes work; final console error log is empty. Protected drafts and `submit-before/` unchanged.
+- Friend flow PASS: Minseo requested Jihun by code, Jihun accepted, friends-only match stayed hidden from Sua, exercise invitation acceptance added the confirmed schedule, and withdrawal removed it. Group flow PASS: create/join/member-only visibility, four-person doubles with 6:4 teams, unique group match counts, and once-only manner rating (4.8 → 4.7).
+- Results PASS: futsal rejected an absent MVP; a valid 2:1 result recorded Jihun MVP and player positions while excluding Sua's absence from stats. Running saved Hanbyeol's 3km at 6:00/km and literal `천천히 즐긴 첫 러닝 & <상쾌함>` review; absent Sua's totals stayed unchanged. Completed detail reads back each person's attendance, position, MVP and review. Cancel keep/confirm both work in the in-app modal. Month and venue filters produce the expected players and empty month.
+- Profile/cards PASS: new Hanbyeol profile with running selected and a 180×180 resized local photo persisted after reload. The actual downloaded photo profile PNG shows only running; today's PNG shows all 5 activities across 3 sports and the literal daily note. Both PNG files were opened and confirmed 1200×630. Review artifact: `C:/Users/USER/.codex/visualizations/2026/09/29/01a0edc0-a787-7741-8974-c5ec82444f80/dwnc-today-card.png`.
+- Responsive PASS: 390×844 real viewport on home, matches, activity, people, groups, profile, ranking and notifications had scrollWidth equal to clientWidth (375 or 390px). Group detail and create dialog remained readable; Escape works. Viewport override reset; deliverable browser left on Minseo's home.
+- Persistence PASS: existing edited v1 bio/NTRP/results survived migration and refresh. A stale second tab showed a conflict alert, then “최신 데이터 불러오기” adopted the new identity without overwriting it. Independent read-only VM retest of raw JSON `null`: corrupt recovery path, no seeded replacement, zero writes, original raw data retained. Storage denial/quota in a real browser remains UNVERIFIED; no real-browser fault injection was performed.
+- AI implementation and required local checks: PASS. Human experience/product acceptance: UNVERIFIED pending user review. Release approval not requested; production authentication, shared persistence and external integrations are outside this local deliverable. No further required AI implementation work remains after commit/tracker closure.
+
+## T3–T5 implementation writer checkpoint — 2026-09-30
+
+### Final writer release after browser rework
+
+- design_preview stopped writing; Writer now none. Final dirty scope against HEAD `3dc0f1a`: modified `CURRENT-STATE.md`, `README.md`, `package.json`, `dwnc-app/app.js`, `dwnc-app/index.html`; new `dwnc-app/cards.js`, `extended-domain.js`, `extended-domain.test.js`, `extended.css`. Untracked `submit-before/` is unrelated and protected. No design-preview file changed. Main performs the final explicit-path commit.
+- Main's real browser recheck PASS: photo profile export opens and downloads valid 1200×630 PNG with only chosen running; today card includes all 5 activities across 3 sports plus note and downloads valid 1200×630 PNG. Completed detail displays escaped running review, futsal position/MVP and absent status. Group, cancellation, notifications, migration, 390px all eight routes and no-console-error checks PASS as recorded above.
+- A supplementary Node canvas/Image mock PASS covers photo load, chosen-sport profile lines, and all-sport daily aggregate with multiple tennis items. Final `npm run check` PASS: syntax and 17/17 domain tests. Final `git diff --check` PASS at writer release.
+- First-pass T3–T5 implementation rendered; total rework count 7 bounded batches: five from the first checkpoint plus photo-card loading/complete aggregation and completed-result readback. Both browser-discovered card and readback defects were fixed and reverified.
+- Final SHA-256: `app.js` `2CF8D126FFF3252D2C190928FF16908B30626849F60F98E906A8C02A68DBBD62`; `cards.js` `E0F40264CEF7D187735BDA7A34A4A4B6F9611E860A180A88E93188E807C45876`; `extended.css` `3F6FA03C18DB4A3C1B234FDDB2792F299E1F09E3C23424E986D35B83534004D3`. Unchanged since the prior writer checkpoint: `extended-domain.js`, `extended-domain.test.js`, `index.html`, `README.md`, `package.json` hashes below.
+
+- design_preview stopped writing at baseline HEAD `3dc0f1a`. Changed only `README.md`, `package.json`, `dwnc-app/app.js`, `dwnc-app/index.html`, new `dwnc-app/cards.js`, `extended-domain.js`, `extended-domain.test.js`, `extended.css`, and this tracker. `submit-before/**` and `design-preview/**` remain untouched. Main owns integration QA, explicit staging and commit.
+- Local preview `http://127.0.0.1:4174/#/home` HTTP 200. `npm run check` PASS: all JavaScript syntax checks and 17/17 domain tests. `git diff --check` found only tracker EOF whitespace, which was removed at this checkpoint. Browser evidence from Main: edited v1 state migrated without loss; friend request/accept, visibility, invitation accept and withdrawal PASS. In-app cancellation modal is saved and syntax checked; affected browser QA plus group/doubles/attendance/rating/photo/card/note/mobile journeys remain UNVERIFIED until Main finishes them.
+- New domain module adds schema-checked v1→v2 migration at the same storage key; safe IDs, friendships/invitations/groups/notifications; match visibility and lifecycles; tennis doubles score, futsal team result and MVP, running review; attendance snapshots, manner ratings, scoped month/all rankings and daily notes. UI adds corresponding routes/forms, local photo resize, and preview/downloadable PNG cards. No account, backend, external publishing or real cross-device sharing.
+- First-pass T3–T5 implementation rendered. Rework count: 5 bounded batches after first UI checkpoint (domain audit edge cases, image upload/export integration, corrupt-storage JSON-null recovery, checkbox label semantics, native confirmation replaced by in-app modal). The native dialog issue was an actual browser blocker; it was fixed without changing product scope.
+- SHA-256: `app.js` `E25DAAEC9909A1A08E91E4A662FE60D1CF46275F41087EF045AF7969258D67A8`; `extended-domain.js` `58F26E5224543EEEC880B23C04EAFBFB20A531C4D6CB489ABC83F11414526A8A`; `extended-domain.test.js` `8903CA55064B20AA18A5FCC065A9479FE438FAB0E93E05F9ECA26FAD366F7380`; `cards.js` `CDABBFED67F66939C4CAB5EC29B1DDDCAE3A7092F12850ED254113B5EE4598E7`; `extended.css` `A2384E20E77010BCAB90F0AD538FDCD9E3CF1FB707951D6EE75CF247063A7F98`; `index.html` `658B6D5B2C874D9B92A94F708FB821D792F4C5384F9A79E5E7EF8ADA51F47D00`; `README.md` `3A67460769A9D54751457CF0F9FA2A96E6CB30D4FEEDE88424A7F950BE8EC50E`; `package.json` `087843E3ACA37EB60367D8E0BEC0234C65F2D4E309BC3D2282D138E858764267`.
 
 ## T1 final integration evidence — 2026-09-30
 
