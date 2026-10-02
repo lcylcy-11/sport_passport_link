@@ -6,6 +6,6 @@
   "scripts": {
     "start": "node dwnc-app/server.js",
     "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js",
-    "check": "node --check dwnc-app/domain.js && node --check dwnc-app/extended-domain.js && node --check dwnc-app/app.js && node --check dwnc-app/cards.js && node --check dwnc-app/server.js && npm test"
+    "check": "node --check dwnc-app/domain.js && node --check dwnc-app/extended-domain.js && node --check dwnc-app/app.js && node --check dwnc-app/icons.js && node --check dwnc-app/cards.js && node --check dwnc-app/server.js && npm test"
   }
 }

@@ -45,7 +45,17 @@ async function drawAvatar(ctx, user) {
   } finally { ctx.restore(); }
 }
 const SPORT_COLOR = { tennis: '#c7e78a', futsal: '#eac79a', running: '#8fd6bd' };
-const SPORT_GLYPH = { tennis: '◎', futsal: '✳', running: '↗' };
+// Same strokes as icons.js, as path data so canvas can draw them.
+const SPORT_PATH = {
+  tennis: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M6.1 5.2c2.7 3.8 2.7 9.8 0 13.6M17.9 5.2c-2.7 3.8-2.7 9.8 0 13.6',
+  futsal: 'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0M12 8.3l3.5 2.5-1.3 4.1H9.8l-1.3-4.1zM12 8.3V3.2M15.5 10.8l4.8-1.6M14.2 14.9l3 4.1M9.8 14.9l-3 4.1M8.5 10.8 3.7 9.2',
+  running: 'M13 4.5a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M5 12.5 8.5 9l4 .5 2.5 3.5 3.5 1M12.5 9.5l-2 5 3.5 2.5-1.5 4.5M10.5 14.5l-2.5 3.5H4.5'
+};
+function sportGlyph(ctx, sport, x, y, size, color) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(size / 24, size / 24);
+  ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.stroke(new Path2D(SPORT_PATH[sport])); ctx.restore();
+}
 function paceText(seconds) { return seconds ? `${Math.floor(seconds / 60)}′${String(seconds % 60).padStart(2, '0')}″` : '—'; }
 function todayLines(state, userId) {
   const activities = d.activityFor(state, userId);
@@ -77,7 +87,7 @@ function drawStamp(ctx, x, y, tilt, ink, lines) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(tilt * Math.PI / 180);
   ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(0, 0, 72, 0, Math.PI * 2); ctx.stroke();
   ctx.setLineDash([]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, 62, 0, Math.PI * 2); ctx.stroke();
-  lines.forEach(([text, dy, size, color, weight]) => centered(ctx, text, 0, dy, size, color, weight, 114));
+  lines.forEach(([text, dy, size, color, weight]) => text?.sport ? sportGlyph(ctx, text.sport, -11, dy - 20, 22, color) : centered(ctx, text, 0, dy, size, color, weight, 114));
   ctx.restore();
 }
 async function drawPhotoBox(ctx, user, x, y, width, height) {
@@ -109,8 +119,9 @@ async function drawProfileBook(ctx, state, user) {
     const top = 322 + index * 70, detail = user.sports[item.sport], [value, sub] = metricFor(identity.stats, item.sport);
     ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#e3eadb'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(76, top, 490, 60, [0, 12, 12, 0]); ctx.fill(); ctx.stroke();
     ctx.fillStyle = BAR[item.sport]; ctx.fillRect(76, top, 6, 60);
-    write(ctx, `${SPORT_GLYPH[item.sport]}  ${SPORT_LABEL[item.sport]}  ${detail.level}`, 100, top + 27, 20, '#193f2d', 800, 250);
-    write(ctx, `${detail.experience} · ${detail.preference}${item.sport === 'tennis' ? ` · NTRP ${detail.ntrp}` : ''}`, 100, top + 50, 14, '#7d907e', 600, 250);
+    sportGlyph(ctx, item.sport, 98, top + 9, 22, BAR[item.sport]);
+    write(ctx, `${SPORT_LABEL[item.sport]}  ${detail.level}`, 128, top + 27, 20, '#193f2d', 800, 220);
+    write(ctx, `${detail.experience} · ${detail.preference}${item.sport === 'tennis' ? ` · NTRP ${detail.ntrp}` : ''}`, 128, top + 50, 14, '#7d907e', 600, 220);
     ctx.textAlign = 'right'; write(ctx, value, 548, top + 30, 26, '#193f2d', 900, 180); write(ctx, sub, 548, top + 50, 14, '#7d907e', 600, 200); ctx.textAlign = 'left';
   });
   const mrz = `DWNC<<${user.friendCode.replace(/[^A-Z0-9]/g, '')}<<${user.chosenSports.map((sport) => CODE[sport]).join('<')}`.padEnd(40, '<').slice(0, 40);
@@ -120,7 +131,7 @@ async function drawProfileBook(ctx, state, user) {
   const slots = [[718, 214], [882, 214], [1046, 214], [718, 396], [882, 396], [1046, 396]], tilts = [-7, 5, -3, 8, -5, 3];
   book.stamps.slice(0, 6).forEach((stamp, index) => {
     const [x, y] = slots[index], ink = STAMP_INK[stamp.match.sport], hidden = stamp.match.visibility !== 'public';
-    drawStamp(ctx, x, y, tilts[index], ink, [[`${SPORT_GLYPH[stamp.match.sport]} ${SPORT_LABEL[stamp.match.sport]}`, -26, 14, ink, 800], [hidden ? '멤버 기록' : stamp.match.venue, -2, 15, '#193f2d', 900], [stampText(stamp, user.id), 22, 15, ink, 800], [dotDate(stamp.match.date).slice(5), 44, 13, '#6c7f6c', 600]]);
+    drawStamp(ctx, x, y, tilts[index], ink, [[{ sport: stamp.match.sport }, -26, 14, ink, 800], [hidden ? '멤버 기록' : stamp.match.venue, -2, 15, '#193f2d', 900], [stampText(stamp, user.id), 22, 15, ink, 800], [dotDate(stamp.match.date).slice(5), 44, 13, '#6c7f6c', 600]]);
   });
   if (book.stamps.length < 6) { const [x, y] = slots[book.stamps.length]; drawStamp(ctx, x, y, 0, '#c3ccbc', [['다음 도장', 4, 17, '#8a9a86', 800], ['새 구장 · 새 종목', 28, 13, '#a3b09e', 600]]); }
   write(ctx, book.stamps.length > 6 ? `외 ${book.stamps.length - 6}개의 도장` : '같이 운동한 구장마다 도장 하나', 640, 562, 16, '#7d907e', 700, 300);
