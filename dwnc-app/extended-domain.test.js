@@ -231,3 +231,34 @@ test('selected-sport edits retain deselected profile data and historic records',
   assert.deepEqual(edited.users[0].chosenSports, ['running']);
   assert.equal(d.validateV2(edited), true);
 });
+
+test('multi-sport identity keeps per-sport metrics and combines only session counts', () => {
+  const state = d.createExtendedSeed(day);
+  const identity = d.sportIdentity(state, 'minseo', '2026-09');
+  assert.deepEqual(identity.sports.map((item) => [item.sport, item.sessions]), [['tennis', 1], ['futsal', 1], ['running', 1]]);
+  assert.equal(identity.total, 3);
+  assert.equal(identity.activeSports, 3);
+  assert.equal(identity.partners, 3);
+  assert.equal(Math.round(identity.sports.reduce((sum, item) => sum + item.share, 0) * 1000), 1000);
+  assert.equal(identity.stats.tennis.winRate, 100);
+  assert.equal(d.sportIdentity(state, 'minseo', '2026-08').monthTotal, 0);
+  const runnerOnly = d.editProfile(state, 'sua', { ...state.users.find((u) => u.id === 'sua'), chosenSports: ['running'], sports: { running: state.users.find((u) => u.id === 'sua').sports.running } });
+  assert.deepEqual(d.sportIdentity(runnerOnly, 'sua').sports.map((item) => item.sport), ['running']);
+  assert.equal(d.sportIdentity(state, 'nobody'), null);
+});
+
+test('match fit chips explain relationship, level and host manner without exposing more than three', () => {
+  const state = d.createExtendedSeed(day);
+  const open = state.matches.find((m) => m.id === 'today-open-tennis');
+  const fit = d.matchFit(state, open, 'minseo');
+  assert.deepEqual(fit.map((chip) => chip.kind), ['group', 'level', 'manner']);
+  assert.equal(fit[0].text, '같은 그룹 · 함께 1회');
+  assert.equal(fit[1].text, '누구나 환영');
+  assert.equal(d.playedTogether(state, 'minseo', 'jihun'), 2);
+  assert.deepEqual(d.matchFit(state, open, 'sua'), []);
+  const futsal = state.matches.find((m) => m.id === 'weekend-futsal');
+  assert.equal(d.matchFit(state, futsal, 'jihun')[0].text, '함께 운동 1회');
+  const runner = d.editProfile(state, 'jihun', { ...state.users.find((u) => u.id === 'jihun'), chosenSports: ['running'], sports: { running: state.users.find((u) => u.id === 'jihun').sports.running } });
+  assert.equal(d.matchFit(runner, open, 'jihun').some((chip) => chip.kind === 'new'), true);
+  assert.equal(d.matchFit(state, open, 'jihun').every((chip) => chip.text.length <= 14), true);
+});

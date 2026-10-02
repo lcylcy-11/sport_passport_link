@@ -44,6 +44,9 @@ async function drawAvatar(ctx, user) {
     }
   } finally { ctx.restore(); }
 }
+const SPORT_COLOR = { tennis: '#c7e78a', futsal: '#eac79a', running: '#8fd6bd' };
+const SPORT_GLYPH = { tennis: '◎', futsal: '✳', running: '↗' };
+function paceText(seconds) { return seconds ? `${Math.floor(seconds / 60)}′${String(seconds % 60).padStart(2, '0')}″` : '—'; }
 function todayLines(state, userId) {
   const activities = d.activityFor(state, userId);
   return SPORTS.map((sport) => {
@@ -52,8 +55,41 @@ function todayLines(state, userId) {
     const completed = items.filter(({ result }) => result && result.attendedIds.includes(userId)).length;
     const first = items[0].match;
     const extra = items.length > 1 ? ` 외 ${items.length - 1}건` : '';
-    return `${SPORT_LABEL[sport]} ${items.length}건${completed ? ` · 완료 ${completed}` : ''}  |  ${first.startTime} ${first.title}${extra}`;
+    return { sport, text: `${SPORT_LABEL[sport]} ${items.length}건${completed ? ` · 완료 ${completed}` : ''}  |  ${first.startTime} ${first.title}${extra}` };
   }).filter(Boolean);
+}
+// Same reading as the in-app play card: per-sport metric tiles plus a sport-mix ring.
+function drawRing(ctx, identity, x, y, radius) {
+  ctx.save();
+  ctx.lineWidth = 26; ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#ffffff1f'; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke();
+  let start = -Math.PI / 2;
+  for (const item of identity.sports.filter((entry) => entry.sessions)) {
+    const end = start + item.share * Math.PI * 2;
+    ctx.strokeStyle = SPORT_COLOR[item.sport]; ctx.beginPath(); ctx.arc(x, y, radius, start, Math.max(start, end - 0.05)); ctx.stroke();
+    start = end;
+  }
+  ctx.restore();
+  ctx.textAlign = 'center';
+  write(ctx, identity.total, x, y + 14, 50, '#ffffff', 900);
+  write(ctx, '함께한 운동', x, y + 44, 16, '#a5c89d', 700);
+  ctx.textAlign = 'left';
+}
+function drawTiles(ctx, identity, x, y, width, height) {
+  const gap = 16, count = identity.sports.length, tile = (width - gap * (count - 1)) / count;
+  identity.sports.forEach((item, index) => {
+    const left = x + index * (tile + gap), stats = identity.stats;
+    const [value, sub] = item.sport === 'tennis'
+      ? [stats.tennis.games ? `${stats.tennis.winRate}%` : '—', `승률 · ${stats.tennis.wins}승 ${stats.tennis.losses}패`]
+      : item.sport === 'futsal'
+        ? [`MVP ${stats.futsal.mvp}`, `${stats.futsal.games}경기 · ${stats.futsal.wins}승`]
+        : [paceText(stats.running.paceSec), `페이스 · ${stats.running.distanceKm}km`];
+    ctx.fillStyle = '#ffffff12'; rounded(ctx, left, y, tile, height, 18);
+    ctx.fillStyle = SPORT_COLOR[item.sport]; rounded(ctx, left + 18, y, tile - 36, 5, 3);
+    write(ctx, `${SPORT_GLYPH[item.sport]}  ${SPORT_LABEL[item.sport]}`, left + 20, y + 44, 21, '#e4efdc', 800, tile - 40);
+    write(ctx, value, left + 20, y + 100, 44, SPORT_COLOR[item.sport], 900, tile - 40);
+    write(ctx, sub, left + 20, y + 132, 17, '#b9cfb7', 600, tile - 40);
+  });
 }
 export async function makeCard(state, user, kind) {
   if (!['profile', 'today'].includes(kind)) throw new Error('카드 종류를 확인해 주세요.');
@@ -63,22 +99,23 @@ export async function makeCard(state, user, kind) {
   ctx.fillStyle = '#e4efcf'; ctx.beginPath(); ctx.arc(1080, 525, 270, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#b5d49b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(1080, 525, 220, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = '#173d2c'; rounded(ctx, 42, 40, 1116, 550, 28);
-  ctx.fillStyle = '#d7efa7'; ctx.beginPath(); ctx.arc(1085, 510, 230, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#a4cf77'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(1085, 510, 170, 0, Math.PI * 2); ctx.stroke();
+  if (kind === 'today') {
+    ctx.fillStyle = '#d7efa7'; ctx.beginPath(); ctx.arc(1085, 510, 230, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#a4cf77'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(1085, 510, 170, 0, Math.PI * 2); ctx.stroke();
+  } else {
+    ctx.strokeStyle = '#ffffff12'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(1090, 60, 210, 0, Math.PI * 2); ctx.stroke();
+  }
   write(ctx, 'DWNC ✳', 86, 112, 34, '#d7efa7', 900);
   write(ctx, kind === 'today' ? 'TODAY IN MOTION' : 'MY PLAY CARD', 88, 155, 17, '#a5c89d', 800);
   await drawAvatar(ctx, user);
   if (kind === 'profile') {
-    write(ctx, user.name, 85, 260, 64, '#ffffff', 900, 825);
-    write(ctx, `${user.region}  ·  함께 운동하는 사람`, 88, 309, 22, '#c5d7c0', 500, 810);
-    const stats = d.statsFor(state, user.id);
-    const lines = user.chosenSports.map((sport) => sport === 'tennis'
-      ? `테니스  ${stats.tennis.wins}승 ${stats.tennis.losses}패  ·  승률 ${stats.tennis.winRate}%`
-      : sport === 'futsal'
-        ? `풋살  ${stats.futsal.games}경기  ·  MVP ${stats.futsal.mvp}회`
-        : `러닝  ${stats.running.distanceKm}km  ·  ${stats.running.runs}회`);
-    lines.forEach((line, index) => write(ctx, line, 89, 377 + index * 46, 23, '#ecf4e8', 600, 795));
-    write(ctx, `매너 ${d.mannerFor(state, user.id).toFixed(1)}   ·   ${user.friendCode}`, 88, 552, 18, '#b8df9e', 700, 780);
+    const identity = d.sportIdentity(state, user.id);
+    write(ctx, user.name, 85, 250, 64, '#ffffff', 900, 780);
+    write(ctx, `${user.region}  ·  ${identity.sports.length}종목러  ·  함께 운동한 사람 ${identity.partners}명`, 88, 296, 22, '#c5d7c0', 600, 780);
+    drawTiles(ctx, identity, 86, 336, 780, 156);
+    drawRing(ctx, identity, 1010, 414, 92);
+    write(ctx, `매너 ${d.mannerFor(state, user.id).toFixed(1)}   ·   ${user.friendCode}`, 88, 552, 18, '#b8df9e', 700, 640);
+    write(ctx, 'MOVE WITH SOMEONE', 900, 552, 15, '#a5c89d', 900, 215);
   } else {
     write(ctx, `${user.name}님의 오늘`, 85, 257, 57, '#ffffff', 900, 825);
     write(ctx, today(), 88, 301, 22, '#c5d7c0', 500);
@@ -87,11 +124,14 @@ export async function makeCard(state, user, kind) {
     if (!lines.length) write(ctx, '오늘의 운동을 함께 시작해요.', 88, 373, 25, '#ecf4e8', 600, 795);
     else {
       write(ctx, `오늘의 운동 ${count}건 · ${lines.length}종목`, 88, 353, 22, '#b8df9e', 700, 795);
-      lines.forEach((line, index) => write(ctx, line, 89, 403 + index * 43, 21, '#ecf4e8', 600, 795));
+      lines.forEach((line, index) => {
+        ctx.fillStyle = SPORT_COLOR[line.sport]; ctx.beginPath(); ctx.arc(96, 396 + index * 43, 7, 0, Math.PI * 2); ctx.fill();
+        write(ctx, line.text, 114, 403 + index * 43, 21, '#ecf4e8', 600, 770);
+      });
     }
     const note = state.dailyNotes[user.id]?.[today()] || '오늘도 좋은 움직임을!';
     write(ctx, note, 88, 552, 20, '#b8df9e', 700, 780);
+    write(ctx, 'MOVE WITH SOMEONE', 900, 552, 15, '#285636', 900, 215);
   }
-  write(ctx, 'MOVE WITH SOMEONE', 900, 552, 15, '#285636', 900, 215);
   return canvas.toDataURL('image/png');
 }

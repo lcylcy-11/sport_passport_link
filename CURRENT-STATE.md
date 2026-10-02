@@ -1,9 +1,9 @@
 # DWNC current state
 
-- Updated: 2026-09-30, Codex
+- Updated: 2026-10-03, Claude Code
 - Writer now: none
-- Checkpoint: T7 is the feature commit containing this closure (resolve with `git log -1 -- dwnc-app/mobile.css`); baseline `767fa75`. Prior feature `390be03`, MVP `6ec3204`, drafts `10652be`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T7 implementation and required local checks PASS; audit F1–F7 fixed. No required AI work remains. Human experience/product acceptance UNVERIFIED; physical mobile devices UNVERIFIED. Release approval not requested.
+- Checkpoint: T8 hackathon-prep commit (resolve with `git log -1 -- HACKATHON-PREP.md`); previous T7 `f1762e4`, baseline `767fa75`. Existing `submit-before/` remains unrelated and protected.
+- AI work: T8 hackathon prep PASS (play card, trust chips, demo safety, `HACKATHON-PREP.md`); T7 fixes PASS. No required AI work remains. Human visual/product acceptance and physical mobile devices UNVERIFIED. Release approval not requested.
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
 
 ## Requests and finite finish line
@@ -16,7 +16,17 @@
 | T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit `390be03`. |
 | T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit `390be03`. |
 | T7 | Audit F1–F7 fixes and mobile-first usability | Codex Main | PASS | 21/21 domain tests and syntax; real browser 320/390px all eight routes, 390px core lifecycle/drafts/context/notifications, 1280px regression; evidence below. Human acceptance and physical-device behavior UNVERIFIED. |
+| T8 | User 2026-10-03: review the project and prepare hackathon-ready work led by aesthetics, UX and core-competitive features | Claude Code (Opus) | PASS (AI work) | Play card, trust chips, PNG redesign, today summary, ranking fallback, demo reset, `HACKATHON-PREP.md`. 23/23 tests + syntax; real browser 320/375/1280; demo path verified; evidence below. Human visual/product acceptance UNVERIFIED. |
 | T6 | User: create an Astra chat in this project and audit code structure, UX, and the system's differentiation/competitiveness | Codex Astra audit chat | PASS | `T6-AUDIT.md`: code review at `8770ef4`, actual desktop/390px browser audit and QA lifecycle, three focused Node reproductions, three official-source alternatives checked 2026-09-30. Seven findings were FAIL at audit time and are fixed in T7; human acceptance and actual model/effort metadata UNVERIFIED. App code was unchanged during T6. |
+
+## T8 hackathon prep — 2026-10-03, Claude Code
+
+- Request: review the project and make hackathon-prep work led by aesthetics, UX and core-competitive features. Scope chosen by Claude as a recommendation, not a user product decision: multi-sport play card, trust chips, demo-safety fixes, prep doc. No server/auth/deploy, no new sport, no seed change (tests depend on seed shape).
+- Findings at start (real browser, 2026-10-03 00:2x): this-month ranking empty on days 1–7 of a month because seed results sit at -5/-7 days; the multi-sport identity rail was `display:none` on mobile; profile showed the long edit form before records.
+- Changes: `extended-domain.js` `sportIdentity`, `playedTogether`, `matchFit` (+2 tests); `app.js` play card on home/profile/profile modal, fit chips on match card/detail, applicant together count, today summary, ranking empty-month fallback and own-row highlight, records before edit, demo reset with confirm, public tag hidden on cards; new `play.css`; `cards.js` profile PNG with ring and sport tiles, sport dots on today PNG; README section; `HACKATHON-PREP.md`.
+- Evidence: `npm run check` PASS (syntax + 23/23 tests). Built-in browser at 375px: home/profile/matches/ranking screenshots; full path 민서 apply → 수아 accept → 6:4 result → 민서 play card 4 total / tennis 2-0, today summary 3건 중 2건, October ranking 민서 #1 with no fallback. Profile and today PNG 1200×630 rendered and viewed. 320px: all eight routes and detail/profile modals scrollWidth 320, tiles stack. 1280px desktop home viewed. Reset confirm → state reseeded, hash #/home, no console errors. Node check of script variants: score 4:6 path, futsal MVP backup, 21:30 closure and 22:00 replacement match.
+- Not verified: physical phones, human visual acceptance of the new card and chips, projector legibility. `.claude/launch.json` (preview config) left untracked.
+- Recovery: revert the T8 commit.
 
 ## T7 implementation and closure — 2026-09-30
 

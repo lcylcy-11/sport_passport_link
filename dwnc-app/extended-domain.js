@@ -401,3 +401,38 @@ export function filterMatches(state, userId, filters = {}, now = new Date()) {
     return true;
   }).sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
 }
+
+// Multi-sport identity: each chosen sport keeps its own metric; only session counts are combined.
+const sessionCount = (stats, sport) => sport === 'tennis' ? stats.tennis.games : sport === 'futsal' ? stats.futsal.games : stats.running.runs;
+export function sportIdentity(state, userId, month = base.today().slice(0, 7)) {
+  const person = uid(state, userId); if (!person) return null;
+  const all = statsFor(state, userId), monthly = statsFor(state, userId, { period: 'month', month });
+  const sports = person.chosenSports.map((sport) => ({ sport, level: person.sports[sport].level, sessions: sessionCount(all, sport), monthSessions: sessionCount(monthly, sport) }));
+  const total = sports.reduce((sum, item) => sum + item.sessions, 0);
+  sports.forEach((item) => { item.share = total ? item.sessions / total : 0; });
+  const partners = unique(state.results.filter((result) => result.attendedIds.includes(userId)).flatMap((result) => result.attendedIds)).filter((id) => id !== userId).length;
+  return { sports, stats: all, total, partners, monthTotal: sports.reduce((sum, item) => sum + item.monthSessions, 0), activeSports: sports.filter((item) => item.sessions).length };
+}
+export function playedTogether(state, leftId, rightId) {
+  return leftId === rightId ? 0 : state.results.filter((result) => result.attendedIds.includes(leftId) && result.attendedIds.includes(rightId)).length;
+}
+// Trust signals shown before applying. Ordered by strength; never more than three.
+export function matchFit(state, match, viewerId) {
+  const viewer = uid(state, viewerId);
+  if (!viewer || !match || match.hostId === viewerId) return [];
+  const chips = [];
+  const together = playedTogether(state, viewerId, match.hostId);
+  if (friendsOf(state, viewerId).includes(match.hostId)) chips.push({ kind: 'friend', text: together ? `친구 · 함께 ${together}회` : '친구의 자리' });
+  else if (state.groups.some((item) => item.memberIds.includes(viewerId) && item.memberIds.includes(match.hostId))) chips.push({ kind: 'group', text: together ? `같은 그룹 · 함께 ${together}회` : '같은 그룹' });
+  else if (together) chips.push({ kind: 'together', text: `함께 운동 ${together}회` });
+  if (!viewer.chosenSports.includes(match.sport)) chips.push({ kind: 'new', text: '새 종목 도전' });
+  else {
+    const mine = base.LEVELS.indexOf(viewer.sports[match.sport].level), wanted = base.LEVELS.indexOf(match.level);
+    if (match.level === '무관') chips.push({ kind: 'level', text: '누구나 환영' });
+    else if (mine === wanted) chips.push({ kind: 'level', text: '내 수준과 같아요' });
+    else if (Math.abs(mine - wanted) === 1) chips.push({ kind: 'level', text: mine < wanted ? '한 단계 위 도전' : '한 단계 여유' });
+  }
+  const manner = mannerFor(state, match.hostId);
+  if (manner >= 4.5) chips.push({ kind: 'manner', text: `모집자 매너 ${manner.toFixed(1)}` });
+  return chips.slice(0, 3);
+}
