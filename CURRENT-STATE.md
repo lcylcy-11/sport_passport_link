@@ -2,8 +2,9 @@
 
 - Updated: 2026-10-03, Claude Code
 - Writer now: none
-- Checkpoint: T8 hackathon-prep commit (resolve with `git log -1 -- HACKATHON-PREP.md`); previous T7 `f1762e4`, baseline `767fa75`. Existing `submit-before/` remains unrelated and protected.
-- AI work: T8 hackathon prep PASS (play card, trust chips, demo safety, `HACKATHON-PREP.md`); T7 fixes PASS. No required AI work remains. Human visual/product acceptance and physical mobile devices UNVERIFIED. Release approval not requested.
+- Checkpoint: T9 profile-book commit (resolve with `git log -1 -- dwnc-app/play.css`); T8 `07518da`, T7 `f1762e4`. Existing `submit-before/` remains unrelated and protected.
+- AI work: T9 passport-format profile PASS; T8 hackathon prep PASS. No required AI work remains. Human visual/product acceptance and physical mobile devices UNVERIFIED. Release approval not requested.
+- User decision 2026-10-03: profile uses a passport-like format, but it is not named a passport ("여권 형식인거지 이름을 여권으로 하는건 아님").
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
 
 ## Requests and finite finish line
@@ -16,8 +17,17 @@
 | T4 | Complete match/record flows: public/friends/group visibility, format/open-seat filters, tennis doubles and score, attendance/position/review/manner, cancel/withdraw, monthly ranking | design_preview → Codex Main | PASS | Main real browser: group-only access, doubles score/stat/unique group count, absent futsal MVP rejection, positions/MVP, once-only rating, cancel keep/confirm, running attendance and escaped review readback. Domain tests PASS. Commit `390be03`. |
 | T5 | Complete daily note and downloadable workout/profile cards; preserve version-1 data; verify real user paths, responsive UI and meaningful domain checks | design_preview → Codex Main | PASS | Main real browser: photo profile PNG and today PNG actual files 1200×630, chosen-sport-only profile, complete 5-activity/3-sport daily aggregate and note; edited v1 state preserved; all eight routes at 390px no overflow, console errors none. Commit `390be03`. |
 | T7 | Audit F1–F7 fixes and mobile-first usability | Codex Main | PASS | 21/21 domain tests and syntax; real browser 320/390px all eight routes, 390px core lifecycle/drafts/context/notifications, 1280px regression; evidence below. Human acceptance and physical-device behavior UNVERIFIED. |
+| T9 | User 2026-10-03: use a passport-like format for the profile (identity page, sport pages, stamps) without naming it a passport | Claude Code (Opus) | PASS (AI work) | Profile book + stamps on profile/profile modal/PNG; 24/24 tests; browser 375/320/1280; private-stamp masking checked. Human visual acceptance UNVERIFIED. |
 | T8 | User 2026-10-03: review the project and prepare hackathon-ready work led by aesthetics, UX and core-competitive features | Claude Code (Opus) | PASS (AI work) | Play card, trust chips, PNG redesign, today summary, ranking fallback, demo reset, `HACKATHON-PREP.md`. 23/23 tests + syntax; real browser 320/375/1280; demo path verified; evidence below. Human visual/product acceptance UNVERIFIED. |
 | T6 | User: create an Astra chat in this project and audit code structure, UX, and the system's differentiation/competitiveness | Codex Astra audit chat | PASS | `T6-AUDIT.md`: code review at `8770ef4`, actual desktop/390px browser audit and QA lifecycle, three focused Node reproductions, three official-source alternatives checked 2026-09-30. Seven findings were FAIL at audit time and are fixed in T7; human acceptance and actual model/effort metadata UNVERIFIED. App code was unchanged during T6. |
+
+## T9 passport-format profile — 2026-10-03, Claude Code
+
+- User decision: passport-like format, name stays "프로필"; UI avoids 여권/비자/입국 wording. Scope chosen by Claude (option 1 of the proposal: profile + profile modal + PNG; no partner-confirmed stamps).
+- Changes: `extended-domain.js` `stampsFor` (+1 test); `app.js` `profileBook` (identity page, sport rows, MRZ-style line, stamp page), profile page and profile modal rebuilt on it, photo controls moved into the edit panel, records panel folded into sport rows, play card limited to home; `play.css` profile-book and stamp styles (spread on desktop, stacked ≤800px, 3/2 stamp columns on phones); `cards.js` profile PNG as a two-page spread with stamps, non-public stamp venues masked; README and `HACKATHON-PREP.md` script/Q&A.
+- Privacy default (Claude, pending a user policy): stamps of matches the viewer cannot view render as "비공개 기록" without venue or link; PNG masks venues of non-public matches.
+- Evidence: `npm run check` PASS (24/24). Browser 375px profile identity/sports/stamps screenshots; 1280px spread screenshot; 320px all eight routes and profile modal scrollWidth 320; other-profile modal shows "매너 · 함께 … 나와 1회"; injected group-only QA match showed as private stamp for non-member jihun; stamp click opened match detail and back returned to profile; PNG 1200×630 decoded and viewed, long venues fit. Node: after demo script 신림체육센터 is the newest stamp. QA data removed via demo reset.
+- Not verified: physical phones, projector legibility, human visual acceptance.
 
 ## T8 hackathon prep — 2026-10-03, Claude Code
 

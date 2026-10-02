@@ -436,3 +436,8 @@ export function matchFit(state, match, viewerId) {
   if (manner >= 4.5) chips.push({ kind: 'manner', text: `모집자 매너 ${manner.toFixed(1)}` });
   return chips.slice(0, 3);
 }
+// Stamp book: one stamp per completed match the user actually attended, newest first.
+export function stampsFor(state, userId) {
+  const stamps = state.results.filter((result) => result.attendedIds.includes(userId)).map((result) => ({ match: mid(state, result.matchId), result, partners: result.attendedIds.filter((id) => id !== userId) })).filter((stamp) => stamp.match).sort((a, b) => b.match.date.localeCompare(a.match.date) || b.match.startTime.localeCompare(a.match.startTime));
+  return { stamps, venues: unique(stamps.map((stamp) => `${stamp.match.region}|${stamp.match.venue}`)).length, regions: unique(stamps.map((stamp) => stamp.match.region)).length, since: stamps.at(-1)?.match.date || null };
+}

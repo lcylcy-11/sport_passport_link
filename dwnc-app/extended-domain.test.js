@@ -262,3 +262,19 @@ test('match fit chips explain relationship, level and host manner without exposi
   assert.equal(d.matchFit(runner, open, 'jihun').some((chip) => chip.kind === 'new'), true);
   assert.equal(d.matchFit(state, open, 'jihun').every((chip) => chip.text.length <= 14), true);
 });
+
+test('stamp book lists attended results newest first with venue, region and partner counts', () => {
+  let state = d.createExtendedSeed(day);
+  const book = d.stampsFor(state, 'minseo');
+  assert.deepEqual(book.stamps.map((stamp) => stamp.match.id), ['morning-run', 'past-tennis', 'past-futsal']);
+  assert.deepEqual([book.venues, book.regions, book.since], [3, 2, '2026-09-23']);
+  assert.deepEqual(book.stamps[2].partners.sort(), ['hyunwoo', 'jihun']);
+  assert.deepEqual(d.stampsFor(state, 'sua').stamps.map((stamp) => stamp.match.id), ['morning-run']);
+  const made = d.makeMatch(state, 'minseo', { ...matchData, startTime: '20:00', endTime: '21:00' }, day);
+  state = d.requestMatch(made.state, made.id, 'jihun');
+  state = d.decideMatchRequest(state, made.id, 'minseo', 'jihun', 'accepted');
+  state = d.saveResult(state, made.id, 'minseo', { attendedIds: ['minseo'], noContest: true, teamAIds: [], scoreA: 0, scoreB: 0 });
+  assert.equal(d.stampsFor(state, 'jihun').stamps.some((stamp) => stamp.match.id === made.id), false);
+  assert.equal(d.stampsFor(state, 'minseo').stamps[0].match.id, made.id);
+  assert.equal(d.stampsFor(state, 'nobody').since, null);
+});
