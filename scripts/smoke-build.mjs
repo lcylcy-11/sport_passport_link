@@ -10,6 +10,10 @@ try {
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const index = await fetch(base); assert.equal(index.status,200);assert.ok((await index.text()).includes('./app.js'));
   assert.equal((await fetch(base+'/api.js')).status,200);
+  assert.equal((await fetch(base+'/home-character.js')).status,200);
+  const kong = await fetch(base+'/assets/kong-preview-v1.png');
+  assert.equal(kong.status,200); assert.equal(kong.headers.get('content-type'),'image/png');
+  assert.equal(Buffer.from(await kong.arrayBuffer()).subarray(1,4).toString(),'PNG');
   assert.equal((await fetch(base+'/api/health')).status,200);
   assert.equal((await fetch(base+'/api/state')).status,401);
   assert.equal((await fetch(base+'/server.js')).status,404);

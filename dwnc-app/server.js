@@ -9,8 +9,8 @@ import { ApiError, ensureProfile, snapshot, executeCommand } from '../backend/co
 import { DomainError } from './domain.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const staticFiles = new Set(['index.html','app.css','app.js','api.js','domain.js','extended-domain.js','icons.js','cards.js','favicon.svg']);
-const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
+const staticFiles = new Set(['index.html','app.css','app.js','api.js','domain.js','extended-domain.js','home-character.js','icons.js','cards.js','favicon.svg','assets/kong-preview-v1.png']);
+const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 const json = (response,status,body) => { response.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}); response.end(JSON.stringify(body)); };
 

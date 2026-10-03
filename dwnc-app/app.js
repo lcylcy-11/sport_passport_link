@@ -2,6 +2,7 @@ import * as old from './domain.js';
 import * as d from './extended-domain.js';
 import { ic, installIcons } from './icons.js';
 import * as api from './api.js';
+import { homeCharacterFor, normalizeKongNickname } from './home-character.js';
 
 installIcons();
 const root = document.getElementById('app');
@@ -25,6 +26,27 @@ const drafts = new Map();
 const modalStack = [];
 let submittedForm = null, returnFocus = null, returnScroll = 0;
 let advancedFiltersOpen = false, profileEditOpen = false, listAnimate = false;
+let homeProfileFlipped = false;
+const homeAvatarPreferences = new Map();
+const homeKongNames = new Map();
+function homeKongNickname(me, character = homeCharacterFor(state, me.id)) {
+  let name = homeKongNames.get(me.id);
+  try { name ||= localStorage.getItem(`dwnc.home.kong-name.v1:${me.id}`); } catch { /* The provider name remains available. */ }
+  return normalizeKongNickname(name) || character.nickname;
+}
+function setHomeKongNickname(me, name) {
+  homeKongNames.set(me.id, name);
+  try { localStorage.setItem(`dwnc.home.kong-name.v1:${me.id}`, name); } catch { /* The in-memory name still works. */ }
+}
+function homeAvatarMode(me) {
+  let mode = homeAvatarPreferences.get(me.id);
+  try { mode ||= localStorage.getItem(`dwnc.home.avatar.v1:${me.id}`); } catch { /* Storage can be unavailable in private browsing. */ }
+  return mode === 'photo' && me.photo ? 'photo' : mode === 'kong' ? 'kong' : me.photo ? 'photo' : 'kong';
+}
+function setHomeAvatarMode(me, mode) {
+  homeAvatarPreferences.set(me.id, mode);
+  try { localStorage.setItem(`dwnc.home.avatar.v1:${me.id}`, mode); } catch { /* The in-memory preference still works. */ }
+}
 let rankFilter = { sport: 'tennis', region: '', venue: '', period: 'month', month: today().slice(0, 7) };
 // Motion bookkeeping: what changed since the last render decides which elements animate.
 let lastPage = null, lastModalKey = null, pulseId = null, pulseFor = null, pulseUntil = 0, newStampId = null, toastTimer = null, closing = false;
@@ -34,7 +56,7 @@ async function loadState() {
   if (ownsLock) { pending = true; root.inert = true; root.setAttribute('aria-busy','true'); }
   try {
     const result = await api.request('/api/state');
-    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; }
+    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; homeProfileFlipped = false; }
     state = result.state; revision = result.revision; loadError = null;
     if (modal?.id && ['details','result'].includes(modal.type) && !match(modal.id)) modal = null;
   } catch (error) {
@@ -195,14 +217,15 @@ function matchCard(item) {
 function emptyState(icon, text, actions = '') { return `<div class="empty">${ic(icon)}<p>${text}</p>${actions}</div>`; }
 
 const sportColor = { tennis: '#c7e78a', futsal: '#eac79a', running: '#8fd6bd' };
+const homeSportLabel = { tennis: 'TENNIS', futsal: 'FUTSAL', running: 'RUNNING' };
 function sportMetric(stats, sport) {
   if (sport === 'tennis') return { value: stats.tennis.games ? `${stats.tennis.winRate}%` : '—', label: '승률', sub: `${stats.tennis.wins}승 ${stats.tennis.losses}패` };
   if (sport === 'futsal') return { value: String(stats.futsal.mvp), label: 'MVP', sub: `${stats.futsal.games}경기` };
   return { value: paceText(stats.running.paceSec), label: '페이스', sub: `${stats.running.distanceKm}km` };
 }
-function playRing(identity) {
+function playRing(identity, colors = sportColor) {
   let start = 0;
-  const stops = identity.sports.filter((item) => item.sessions).map((item) => { const end = start + item.share * 360; const stop = `${sportColor[item.sport]} ${start.toFixed(1)}deg ${(end - 2).toFixed(1)}deg, transparent ${(end - 2).toFixed(1)}deg ${end.toFixed(1)}deg`; start = end; return stop; });
+  const stops = identity.sports.filter((item) => item.sessions).map((item) => { const end = start + item.share * 360; const stop = `${colors[item.sport]} ${start.toFixed(1)}deg ${(end - 2).toFixed(1)}deg, transparent ${(end - 2).toFixed(1)}deg ${end.toFixed(1)}deg`; start = end; return stop; });
   const fill = stops.length ? `conic-gradient(${stops.join(', ')})` : 'conic-gradient(#ffffff22 0deg 360deg)';
   const label = identity.sports.map((item) => `${old.SPORT_LABEL[item.sport]} ${item.sessions}회`).join(', ');
   return `<span class="ring" style="--ring:${fill}" role="img" aria-label="함께한 운동 ${identity.total}회: ${esc(label)}"><span><strong data-count="${identity.total}">${identity.total}</strong><small>운동</small></span></span>`;
@@ -246,12 +269,45 @@ function todaySummary(items) {
   return `<span class="today-sum" title="오늘 ${items.length}건 중 ${done}건 완료">${items.map(({ match: item, result }) => `<i class="dot ${item.sport} ${result ? 'on' : ''}"></i>`).join('')}<b>${done}/${items.length}</b></span>`;
 }
 
+function homePlayCard(me) {
+  const identity = d.sportIdentity(state, me.id), stats = identity.stats;
+  const metrics = old.SPORTS.map((sport) => {
+    const values = sport === 'tennis'
+      ? [['경기 수', stats.tennis.games, '회'], ['승률', stats.tennis.games ? stats.tennis.winRate : '—', stats.tennis.games ? '%' : '']]
+      : sport === 'futsal'
+        ? [['경기 수', stats.futsal.games, '회'], ['MVP 선정', stats.futsal.mvp, '회']]
+        : [['누적 거리', stats.running.distanceKm, 'km']];
+    return `<li class="home-sport ${sport}"><h3>${homeSportLabel[sport]}</h3><dl>${values.map(([label, value, unit]) => `<div><dt>${label}</dt><dd>${esc(value)}<small>${unit}</small></dd></div>`).join('')}</dl></li>`;
+  }).join('');
+  const character = homeCharacterFor(state, me.id), mode = homeAvatarMode(me);
+  const image = mode === 'photo' ? me.photo : character.imageUrl;
+  return `<div class="home-identity"><div class="home-identity__body"><button class="home-avatar ${mode}" data-action="home-avatar" aria-label="홈 프로필 이미지 변경"><img src="${esc(image)}" alt="${mode === 'photo' ? esc(me.name) + ' 프로필 사진' : '콩 캐릭터'}"><span class="home-avatar__edit" aria-hidden="true">${ic('camera')}</span></button><div class="home-identity__details"><strong class="home-identity__name">${esc(me.name)}</strong><dl class="home-personal"><div><dt>주활동 지역</dt><dd>${ic('pin')}${esc(me.region)}</dd></div><div><dt>연령대</dt><dd>${esc(me.ageRange || '미입력')}</dd></div></dl><span class="home-manner">${ic('star')}<span>매너지수</span><strong>${d.mannerFor(state, me.id).toFixed(1)}</strong><small>/ 5</small></span></div></div></div><ul class="home-sports">${metrics}</ul>`;
+}
+
+function homeGrowthCard(me) {
+  const character = homeCharacterFor(state, me.id);
+  const equipment = { tennis: '라켓', futsal: '축구공', running: '러닝화' };
+  const equipmentIcons = { tennis: 'racket', futsal: 'futsal', running: 'shoe' };
+  return `<div class="home-kong-heading"><button class="home-kong-name-edit" data-action="home-kong-name" aria-label="콩 닉네임 변경"><strong class="home-kong-name">${esc(homeKongNickname(me, character))}</strong>${ic('edit')}</button><h2>콩 성장 상태</h2></div><dl class="home-equipment" aria-label="콩 장비창">${old.SPORTS.map(sport => `<div class="home-equipment-slot ${sport}"><dt><span class="home-equipment-icon">${ic(equipmentIcons[sport])}</span><span>${equipment[sport]}<span class="sr"> 레벨</span></span></dt><dd>${character.levels[sport] === null ? '<span class="home-level-pending">준비 중</span>' : `<small>Lv.</small> ${character.levels[sport]}`}</dd></div>`).join('')}</dl><div class="home-kong-stage"><img class="home-kong-character" src="${esc(character.imageUrl)}" alt="${esc(homeKongNickname(me, character))} 콩 캐릭터"><span class="home-kong-ground" aria-hidden="true"></span></div><div class="home-growth-activity"><p>최근 30일 운동</p><dl>${old.SPORTS.map(sport => `<div class="${sport}"><dt>${homeSportLabel[sport]}</dt><dd>${character.recent[sport]}<small>회</small></dd></div>`).join('')}</dl></div><button class="home-profile-detail" data-action="home-profile-detail">프로필에서 자세히 보기${ic('right')}</button>`;
+}
+
+function homeProfileCard(me) {
+  return `<section class="home-profile" aria-label="내 플레이 프로필과 콩 성장 카드"><div class="home-profile__rotor ${homeProfileFlipped ? 'is-flipped' : ''}"><div class="home-profile__face home-profile__front" aria-hidden="${homeProfileFlipped}" ${homeProfileFlipped ? 'inert' : ''}><div class="home-panel-label"><h2 id="home-profile-title">내 플레이 프로필</h2><a class="more" href="#/profile">프로필${ic('right')}</a></div>${homePlayCard(me)}<button class="home-flip-toggle" data-action="home-flip" aria-label="콩 성장 상태 보기" aria-expanded="${homeProfileFlipped}" aria-controls="home-growth-face"><span>${ic('refresh')}콩 성장 보기</span></button></div><div id="home-growth-face" class="home-profile__face home-profile__back" aria-hidden="${!homeProfileFlipped}" ${homeProfileFlipped ? '' : 'inert'}>${homeGrowthCard(me)}<button class="home-flip-toggle" data-action="home-flip" aria-label="내 플레이 프로필 보기"><span>${ic('refresh')}프로필 보기</span></button></div></div></section>`;
+}
+
+function homeKongNameModal(me) {
+  return sheet('콩 닉네임', `<form id="home-kong-name-form" class="form"><label>닉네임<input name="nickname" required maxlength="16" autocomplete="off" value="${esc(homeKongNickname(me))}" aria-describedby="home-kong-name-help"></label><p id="home-kong-name-help" class="muted">콩을 부를 이름을 1~16자로 정해주세요.</p><button class="btn primary wide" type="submit">저장</button></form>`, { wide: false });
+}
+
+function homeAvatarModal(me) {
+  const character = homeCharacterFor(state, me.id), mode = homeAvatarMode(me);
+  return sheet('홈 프로필 이미지', `<div class="home-avatar-options"><button class="home-avatar-option ${mode === 'kong' ? 'selected' : ''}" data-action="home-avatar-mode" data-id="kong" aria-pressed="${mode === 'kong'}"><img src="${esc(character.imageUrl)}" alt=""><strong>콩 캐릭터</strong></button><button class="home-avatar-option photo ${mode === 'photo' ? 'selected' : ''}" data-action="home-avatar-mode" data-id="photo" aria-pressed="${mode === 'photo'}" ${me.photo ? '' : 'disabled'}>${me.photo ? `<img src="${esc(me.photo)}" alt="">` : ic('user')}<strong>프로필 사진</strong></button></div><label class="btn soft wide home-photo-upload">${ic('camera')}사진 업로드<input id="home-profile-photo" type="file" accept="image/png,image/jpeg,image/webp"><span class="sr">PNG, JPEG, WebP · 최대 5MB</span></label>`, { wide: false });
+}
+
 function homePage(me) {
   const todayItems = d.activityFor(state, me.id);
-  const suggestions = d.filterMatches(state, me.id, { openOnly: true, region: me.region }).filter((item) => item.hostId !== me.id && !item.applications.some((a) => a.userId === me.id)).slice(0, 4);
-  const note = state.dailyNotes[me.id]?.[today()] || '';
   const todayCards = todayItems.map(({ match: item, result }) => `<button type="button" class="today ${item.sport} ${result ? 'is-done' : ''}" data-action="details" data-id="${esc(item.id)}"><span class="today__time">${esc(item.startTime)}</span>${sportIcon(item.sport)}<span class="today__body"><strong>${esc(item.title)}</strong>${result ? `<span class="today__res">${ic('check')}${esc(resultSummary(result, item, me.id))}</span>` : `<span class="meta">${ic('pin')}${esc(item.venue)}</span>`}</span>${result ? '' : item.status === 'cancelled' ? pill('bad', 'x', '취소') : avatarStack(old.participants(item), 3)}</button>`).join('');
-  return `<section class="hero"><h1>오늘도, 같이<br><em>움직여볼까요?</em></h1><div class="hero__actions"><a class="btn primary" href="#/matches">${ic('search')}매칭 찾기</a><button class="btn soft" data-action="create">${ic('plus')}자리 만들기</button></div></section>${playCard(me.id)}<section class="block"><div class="block__head"><h2>오늘 ${todaySummary(todayItems)}</h2><button class="icon-btn" data-action="export-card" data-kind="today" aria-label="오늘 운동 카드 공유" title="오늘 카드">${ic('share')}</button></div><div class="today-list">${todayItems.length ? todayCards : emptyState('calendar', '오늘 일정이 없어요', '<a class="btn soft sm" href="#/matches">' + ic('search') + '찾아보기</a>')}</div><form id="note-form" class="note"><label class="sr" for="daily-note">오늘의 한 줄</label>${ic('edit')}<input id="daily-note" name="note" maxlength="140" value="${esc(note)}" placeholder="오늘의 한 줄"><button class="icon-btn solid" type="submit" aria-label="한 줄 저장">${ic('check')}</button></form></section><section class="block"><div class="block__head"><h2>근처 자리</h2><a href="#/matches" class="more">전체${ic('right')}</a></div><div class="cards">${suggestions.length ? suggestions.map(matchCard).join('') : emptyState('pin', '근처에 열린 자리가 없어요', `<button class="btn soft sm" data-action="create">${ic('plus')}자리 만들기</button>`)}</div></section>`;
+  return `<header class="home-toolbar"><h1>홈</h1><p>${esc(dateText(today()))}</p></header><div class="home-overview"><div class="home-profile-column">${homeProfileCard(me)}<div class="home-actions"><a class="btn primary" href="#/matches">${ic('search')}매칭 찾기</a><button class="btn soft" data-action="create">${ic('plus')}자리 만들기</button></div></div><div class="home-hub"><section class="block home-today"><div class="block__head"><h2>오늘 ${todaySummary(todayItems)}</h2><button class="icon-btn" data-action="export-card" data-kind="today" aria-label="오늘 운동 카드 공유" title="오늘 카드">${ic('share')}</button></div><div class="today-list">${todayItems.length ? todayCards : emptyState('calendar', '오늘 일정이 없어요', '<a class="btn soft sm" href="#/matches">' + ic('search') + '찾아보기</a>')}</div></section><nav class="home-shortcuts" aria-label="홈 바로가기"><a class="home-shortcut home-shortcut--groups" href="#/groups"><span class="home-shortcut__top"><span class="home-shortcut__icon">${ic('users')}</span>${ic('right')}</span><span class="home-shortcut__body"><strong>그룹</strong><span>함께 운동하는 모임</span></span></a><a class="home-shortcut home-shortcut--ranking" href="#/ranking"><span class="home-shortcut__top"><span class="home-shortcut__icon">${ic('trophy')}</span>${ic('right')}</span><span class="home-shortcut__body"><strong>랭킹</strong><span>종목별 운동 기록</span></span></a></nav></div></div>`;
 }
 
 function sportTabs(action, current, withAll = true) {
@@ -419,17 +475,18 @@ function render() {
   if (!state) { document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; return; }
   const me = user(state.activeUserId);
   const page = route();
+  if (page !== 'home' || lastPage !== 'home') homeProfileFlipped = false;
   // A highlight survives the follow-up route render, then expires.
   if (pulseId && pulseId !== pulseFor) { pulseFor = pulseId; pulseUntil = performance.now() + 700; }
   if (pulseId && performance.now() >= pulseUntil) { pulseId = null; pulseFor = null; }
   const pageViews = { home: homePage, matches: matchesPage, activity: activityPage, people: peoplePage, groups: groupsPage, profile: profilePage, ranking: rankingPage, notifications: notificationsPage };
   const unread = state.notifications.filter((item) => item.userId === me.id && !item.read).length;
-  const modalContent = modal ? modal.type === 'create' ? createModal(me, modal.groupId) : modal.type === 'details' ? detailModal(match(modal.id), me) : modal.type === 'result' ? resultModal(match(modal.id)) : modal.type === 'profile' ? profileModal(modal.id, me) : modal.type === 'invite' ? inviteModal(modal.id, me) : modal.type === 'group-create' ? groupCreateModal(me) : modal.type === 'group-detail' ? groupDetailModal(group(modal.id), me) : modal.type === 'cancel-confirm' ? cancelConfirmModal(match(modal.id)) : modal.type === 'card-loading' ? cardLoadingModal() : cardModal() : '';
+  const modalContent = modal ? modal.type === 'create' ? createModal(me, modal.groupId) : modal.type === 'details' ? detailModal(match(modal.id), me) : modal.type === 'result' ? resultModal(match(modal.id)) : modal.type === 'profile' ? profileModal(modal.id, me) : modal.type === 'invite' ? inviteModal(modal.id, me) : modal.type === 'group-create' ? groupCreateModal(me) : modal.type === 'group-detail' ? groupDetailModal(group(modal.id), me) : modal.type === 'cancel-confirm' ? cancelConfirmModal(match(modal.id)) : modal.type === 'home-avatar' ? homeAvatarModal(me) : modal.type === 'home-kong-name' ? homeKongNameModal(me) : modal.type === 'card-loading' ? cardLoadingModal() : cardModal() : '';
   const entering = page !== lastPage; lastPage = page;
   const modalKey = modal ? `${modal.type}:${modal.id || modal.kind || ''}` : null;
   const modalEnter = modalKey && modalKey !== lastModalKey; lastModalKey = modalKey;
   const switcher = `<a href="#/profile" class="who">${avatar(me.id, 'sm')}<span class="who__name">${esc(me.name)}</span></a><button class="icon-btn" data-action="reload-state" aria-label="새로고침">${ic('refresh')}</button>`;
-  root.innerHTML = `<div class="shell"><aside class="side ${entering ? 'moved' : ''}"><a href="#/home" class="brand">DWNC<span>✳</span></a><nav aria-label="주 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}${navLink('people', '친구', 'users')}${navLink('groups', '그룹', 'flag')}${navLink('notifications', '알림', 'bell', unread)}</nav></aside><div class="main"><header class="top"><a href="#/home" class="brand">DWNC<span>✳</span></a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
+  root.innerHTML = `<div class="shell ${page === 'home' ? 'home-surface' : ''}"><aside class="side ${entering ? 'moved' : ''}"><a href="#/home" class="brand">DWNC<span>✳</span></a><nav aria-label="주 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}${navLink('people', '친구', 'users')}${navLink('groups', '그룹', 'flag')}${navLink('notifications', '알림', 'bell', unread)}</nav></aside><div class="main"><header class="top"><a href="#/home" class="brand">DWNC<span>✳</span></a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
   restoreDrafts();
   document.body.classList.toggle('dialog-open', Boolean(modalContent));
   root.querySelector('.shell').inert = Boolean(modalContent);
@@ -441,6 +498,7 @@ function render() {
   if (page === 'profile' && newStampId) newStampId = null;
   listAnimate = false;
   document.title = `DWNC · ${pageTitle[page]}`;
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', page === 'home' ? '#e6ecf1' : '#173d2b');
 }
 function countUp() {
   if (reduceMotion()) return;
@@ -495,6 +553,25 @@ root.addEventListener('click', async (event) => {
   let exportRequestId = null;
   try {
     if (action === 'close') closeModal();
+    else if (action === 'home-flip') {
+      homeProfileFlipped = !homeProfileFlipped;
+      const card = root.querySelector('.home-profile');
+      card.querySelector('.home-profile__rotor').classList.toggle('is-flipped', homeProfileFlipped);
+      for (const face of card.querySelectorAll('.home-profile__face')) {
+        const hidden = face.classList.contains('home-profile__front') === homeProfileFlipped;
+        face.inert = hidden; face.setAttribute('aria-hidden', String(hidden));
+      }
+      card.querySelector('.home-profile__front .home-flip-toggle').setAttribute('aria-expanded', String(homeProfileFlipped));
+      card.querySelector(`${homeProfileFlipped ? '.home-profile__back' : '.home-profile__front'} .home-flip-toggle`).focus({ preventScroll: true });
+    }
+    else if (action === 'home-avatar') openModal({ type: 'home-avatar' }, button);
+    else if (action === 'home-kong-name') openModal({ type: 'home-kong-name' }, button);
+    else if (action === 'home-avatar-mode') {
+      const me = user(state.activeUserId);
+      if (!['kong', 'photo'].includes(id) || (id === 'photo' && !me.photo)) return;
+      setHomeAvatarMode(me, id); closeModal();
+    }
+    else if (action === 'home-profile-detail') { homeProfileFlipped = false; location.hash = '#/profile'; }
     else if (action === 'reload-state') { loadError = null; await loadState(); }
     else if (action === 'auth-mode') { authMode = id; render(); }
     else if (action === 'logout') {
@@ -558,6 +635,12 @@ root.addEventListener('change', async (event) => {
     if (target.id === 'create-format') { const capacity = root.querySelector('#create-capacity'); if (capacity) capacity.value = target.value === 'doubles' ? 4 : 2; }
     if (target.id === 'create-visibility') setCreateVisibility();
     if (target.id === 'profile-photo' && target.files?.[0]) { const ownerId = state.activeUserId; const url = await makePhoto(target.files[0]); if (state.activeUserId !== ownerId) return; await save('profile.photo', {photo:url}, '사진 저장', 'camera'); }
+    if (target.id === 'home-profile-photo' && target.files?.[0]) {
+      const ownerId = state.activeUserId, url = await makePhoto(target.files[0]);
+      if (state?.activeUserId !== ownerId) return;
+      await save('profile.photo', { photo: url }, '사진 저장', 'camera');
+      if (state?.activeUserId === ownerId) { setHomeAvatarMode(user(ownerId), 'photo'); closeModal(); }
+    }
   } catch (error) { feedback(error.message || '변경을 완료하지 못했습니다.'); }
 });
 
@@ -587,6 +670,12 @@ root.addEventListener('submit', async (event) => {
     }
     if (form.id === 'filter-form') { applyFilters(form); return; }
     if (form.id === 'ranking-form') return;
+    if (form.id === 'home-kong-name-form') {
+      const name = normalizeKongNickname(values.nickname);
+      if (!name) throw new Error('닉네임을 1~16자로 입력해 주세요.');
+      setHomeKongNickname(user(state.activeUserId), name);
+      drafts.delete(draftKey(form)); closeModal(); showToast('콩 닉네임 저장'); return;
+    }
     if (form.id === 'note-form') { await save('note.save', {date:today(),text:values.note}, '한 줄 저장', 'edit'); return; }
     if (form.id === 'friend-form') { await save('friend.request', {code:values.code}, '친구 신청 보냄', 'userplus'); return; }
     if (form.id === 'group-form') { modal = null; await save('group.create', values, '그룹 생성', 'flag'); return; }

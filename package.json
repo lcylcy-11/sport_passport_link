@@ -7,7 +7,7 @@
     "start": "node --env-file-if-exists=.env dwnc-app/server.js",
     "db:migrate": "node --env-file-if-exists=.env backend/manage.js migrate",
     "db:seed": "node --env-file-if-exists=.env backend/manage.js seed",
-    "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js backend/integration.test.js",
+    "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js dwnc-app/home-character.test.js backend/integration.test.js",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json",
     "build": "node scripts/build.mjs",
