@@ -78,15 +78,25 @@ export class CloudStore {
   }
 }
 
-// The return value is exposed only after the remote atomic write succeeds.
+// Actions must affect only this disposable DB: a rejected CAS is safe to reapply.
+// Domain revision/permission checks still run against each fresh snapshot.
+// Never retry transport failures, whose remote outcome may be unknown.
 export async function withCloudDatabase(store,action) {
-  const saved=await store.read();
-  const db=restoreCapsule(saved.capsule);
-  try {
-    const before=JSON.stringify(exportCapsule(db));
-    const result=await action(db);
-    const after=exportCapsule(db);
-    if (JSON.stringify(after)!==before) await store.compareAndSwap(saved.revision,after);
-    return result;
-  } finally { db.close(); }
+  for (let attempt=0;attempt<3;attempt++) {
+    const saved=await store.read();
+    const db=restoreCapsule(saved.capsule);
+    try {
+      const before=JSON.stringify(exportCapsule(db));
+      const result=await action(db);
+      const after=exportCapsule(db);
+      if (JSON.stringify(after)!==before) {
+        try { await store.compareAndSwap(saved.revision,after); }
+        catch (error) {
+          if (error.status===409 && error.code==='REVISION_CONFLICT' && attempt<2) continue;
+          throw error;
+        }
+      }
+      return result;
+    } finally { db.close(); }
+  }
 }

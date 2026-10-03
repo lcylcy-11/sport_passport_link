@@ -85,6 +85,33 @@ test('group chat and message UUID dedup survive new invocations without incremen
   await assert.rejects(withCloudDatabase(r.store,db=>sendMessage(db,randomUUID(),room.room.id,{...messageInput,expectedUserId:randomUUID()})),error=>error.status===409);
 });
 
+test('three concurrent chat sends persist without losing peers or duplicating retries',async()=>{
+  const r=remote(),peers=[actor,{id:randomUUID(),name:'B'},{id:randomUUID(),name:'C'}];
+  const initial=await withCloudDatabase(r.store,db=>{peers.forEach(peer=>provision(db,peer));return snapshot(db,actor.id);});
+  const group=await withCloudDatabase(r.store,db=>executeCommand(db,actor.id,command(initial.revision,'group.create',{name:'Concurrent',region:'서울',description:'QA'})));
+  for (const peer of peers.slice(1)) await withCloudDatabase(r.store,db=>executeCommand(db,peer.id,command(snapshot(db,peer.id).revision,'group.join',{groupId:group.id},peer.id)));
+  const opened=await withCloudDatabase(r.store,db=>openRoom(db,actor.id,{kind:'group',groupId:group.id,expectedUserId:actor.id,requestId:randomUUID()}));
+  const inputs=peers.map(peer=>({text:peer.name,expectedUserId:peer.id,clientMessageId:randomUUID()}));
+  const send=(peer,i)=>withCloudDatabase(r.store,db=>sendMessage(db,peer.id,opened.room.id,inputs[i]));
+  const responses=await Promise.all(peers.map(send));
+  assert.equal(new Set(responses.map(result=>result.message.id)).size,3);
+  await Promise.all(peers.map(send));
+  const messages=await withCloudDatabase(r.store,db=>listMessages(db,actor.id,opened.room.id));
+  assert.equal(messages.messages.length,3);
+  assert.deepEqual(new Set(messages.messages.map(message=>message.text)),new Set(peers.map(peer=>peer.name)));
+});
+
+test('cloud conflict reapply is bounded and never retries unknown remote failures',async()=>{
+  let actions=0,reads=0,writes=0;
+  const store={read:async()=>{reads++;return {revision:0,capsule:null};},compareAndSwap:async()=>{writes++;throw Object.assign(new Error('conflict'),{status:409,code:'REVISION_CONFLICT'});}};
+  await assert.rejects(withCloudDatabase(store,db=>{actions++;provision(db);}),error=>error.code==='REVISION_CONFLICT');
+  assert.equal(writes,3);assert.equal(actions,3);assert.equal(reads,3);
+  actions=reads=writes=0;
+  store.compareAndSwap=async()=>{writes++;throw Object.assign(new Error('unknown outcome'),{status:503});};
+  await assert.rejects(withCloudDatabase(store,db=>{actions++;provision(db);}),error=>error.status===503);
+  assert.equal(writes,1);assert.equal(actions,1);assert.equal(reads,1);
+});
+
 test('corrupt, unexpected credential tables and invalid foreign keys fail closed',()=>{
   assert.throws(()=>restoreCapsule({version:1,tables:{user:[]}}),error=>error.status===503);
   const db=restoreCapsule();let capsule;

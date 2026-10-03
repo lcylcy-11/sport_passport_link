@@ -73,6 +73,24 @@ test('same failed message retries with the original clientMessageId', async () =
   chat.dispose();
 });
 
+test('successful receive polls cannot erase an unsent-message warning', async () => {
+  let fail=true;
+  const chat=controller({request:async(path,payload)=>{
+    if(path==='/api/chats')return {rooms:[room]};
+    if(payload){if(fail)throw new Error('offline');return {message:{id:4,senderId:'a',text:payload.text,roomId:room.id}};}
+    return {messages:[],cursor:0};
+  }});
+  chat.setRoom(room.id); const dom=surface(); await chat.mount(dom.root);
+  const form={id:'chat-message-form',elements:{namedItem:()=>({value:'보존할 메시지'})},querySelector:()=>null};
+  await chat.handleSubmit(form);
+  assert.match(chat.render(),/전송하지 못했어요/);
+  await chat.mount(dom.root);
+  assert.match(chat.render(),/전송하지 못했어요/);
+  fail=false;await chat.handleSubmit(form);
+  assert.doesNotMatch(chat.render(),/전송하지 못했어요/);
+  chat.dispose();
+});
+
 test('late old-account replies cannot enter the new account view', async () => {
   let state = fixture(), release;
   const chat = controller({ getState: () => state, request: async path => path === '/api/chats' ? { rooms: [room] } : new Promise(resolve => { release = resolve; }) });

@@ -12,7 +12,7 @@ export function createChatController({ request, getState, save, renderApp, openW
   let account = null, roomId = null, rooms = [], roomsLoaded = false, epoch = 0;
   let mounted = null, surfaceRoot = null, timer = null, fetching = null, visibilityDocument = null;
   let appointmentOpen = false, replacement = null, errorText = '', loadingEarlier = false;
-  const caches = new Map(), drafts = new Map(), appointmentDrafts = new Map(), pendingMessages = new Map(), pendingOpens = new Map();
+  const caches = new Map(), drafts = new Map(), appointmentDrafts = new Map(), pendingMessages = new Map(), pendingOpens = new Map(), sendErrors = new Map();
   const currentState = () => getState() || {};
   const room = () => rooms.find(item => item.id === roomId);
   const userName = id => currentState().users?.find(user => user.id === id)?.name || '운동 친구';
@@ -33,7 +33,7 @@ export function createChatController({ request, getState, save, renderApp, openW
     const next = currentState().activeUserId || null;
     if (next === account) return;
     epoch++; stopTimer(); account = next; roomId = null; rooms = []; roomsLoaded = false;
-    caches.clear(); drafts.clear(); appointmentDrafts.clear(); pendingMessages.clear(); pendingOpens.clear();
+    caches.clear(); drafts.clear(); appointmentDrafts.clear(); pendingMessages.clear(); pendingOpens.clear(); sendErrors.clear();
     appointmentOpen = false; replacement = null; errorText = ''; mounted = null;
   }
   function guard(id, actor, token) { return currentState().activeUserId === actor && account === actor && roomId === id && epoch === token; }
@@ -116,7 +116,7 @@ export function createChatController({ request, getState, save, renderApp, openW
     return `<section class="chat-view chat-room-view" data-chat-view data-chat-room="${esc(roomId)}"><header class="chat-room-heading"><button type="button" class="icon-btn" data-action="chat-back" aria-label="대화 목록으로">‹</button><div><small data-chat-kind>${esc(KINDS[activeRoom?.kind] || '대화')}</small><h2 data-chat-title>${esc(activeRoom?.title || '대화 불러오는 중…')}</h2></div><button type="button" class="btn soft small" data-action="chat-appointment"${activeRoom ? '' : ' disabled'}>약속 잡기</button></header><p class="hint chat-group-hint" data-chat-group-hint${activeRoom?.kind === 'group' ? '' : ' hidden'}>현재 그룹 회원이 볼 수 있는 대화예요.</p>
       <div data-chat-proposals class="chat-proposals">${proposalsHTML()}</div>${appointmentHTML()}
       <div class="chat-history-controls"><button type="button" class="text-btn" data-action="chat-earlier"${data.hasMore ? '' : ' hidden'}>이전 메시지 보기</button><button type="button" class="text-btn" data-action="chat-latest"${data.history ? '' : ' hidden'}>최근 대화${data.unread ? ` · 새 메시지 ${data.unread}` : ''}</button></div>
-      <div class="chat-messages" data-chat-messages role="log" aria-label="대화 메시지" aria-live="polite" aria-relevant="additions text" tabindex="0">${messagesHTML()}</div><p class="chat-error" data-chat-error role="status">${esc(errorText)}</p>
+       <div class="chat-messages" data-chat-messages role="log" aria-label="대화 메시지" aria-live="polite" aria-relevant="additions text" tabindex="0">${messagesHTML()}</div><p class="chat-error" data-chat-error role="status">${esc(sendErrors.get(key()) || errorText)}</p>
       <form id="chat-message-form" class="chat-composer"><label class="sr-only" for="chat-message-text">메시지</label><textarea id="chat-message-text" name="text" maxlength="1000" rows="2" required placeholder="메시지를 입력하세요">${esc(drafts.get(key()) || '')}</textarea><button type="submit" class="btn primary" aria-label="메시지 보내기">보내기</button></form></section>`;
   }
   function paint({ earlier = false, forceBottom = false } = {}) {
@@ -135,7 +135,7 @@ export function createChatController({ request, getState, save, renderApp, openW
     }
     const proposals = mounted.querySelector('[data-chat-proposals]');
     if (proposals) { const html = proposalsHTML(); if (proposals.innerHTML !== html) proposals.innerHTML = html; }
-    const error = mounted.querySelector('[data-chat-error]'); if (error) error.textContent = errorText;
+    const error = mounted.querySelector('[data-chat-error]'); if (error) error.textContent = sendErrors.get(key()) || errorText;
     const before = mounted.querySelector('[data-action="chat-earlier"]'); if (before) before.hidden = !cache().hasMore;
     const latest = mounted.querySelector('[data-action="chat-latest"]');
     if (latest) { latest.hidden = !cache().history; latest.textContent = `최근 대화${cache().unread ? ` · 새 메시지 ${cache().unread}` : ''}`; }
@@ -163,7 +163,7 @@ export function createChatController({ request, getState, save, renderApp, openW
         rooms = response.rooms || []; roomsLoaded = true;
         if (id) {
           if (!room()) {
-            caches.delete(id); drafts.delete(key()); appointmentDrafts.delete(key());
+            caches.delete(id); drafts.delete(key()); appointmentDrafts.delete(key()); sendErrors.delete(key()); pendingMessages.delete(key());
             const composer = mounted?.querySelector('[name="text"]'); if (composer) composer.value = '';
             errorText = '이 대화를 열 수 없어요. 대화 목록을 확인해 주세요.'; paint(); return;
           }
@@ -272,11 +272,11 @@ export function createChatController({ request, getState, save, renderApp, openW
     try {
       const response = await request(`/api/chats/${encodeURIComponent(id)}/messages`, { text: outgoing.text, clientMessageId: outgoing.clientMessageId, expectedUserId: outgoing.expectedUserId });
       if (!guard(id, actor, token)) return;
-      pendingMessages.delete(draftKey); mergeMessages([response.message], { advanceCursor: false });
+      pendingMessages.delete(draftKey); sendErrors.delete(draftKey); mergeMessages([response.message], { advanceCursor: false });
       const composer = form.elements?.namedItem('text');
       if (composer?.value.trim() === text) { composer.value = ''; drafts.set(draftKey, ''); }
       errorText = ''; paint({ forceBottom: !cache().history });
-    } catch (error) { if (guard(id, actor, token)) { errorText = '전송하지 못했어요. 보내기를 누르면 같은 메시지를 다시 시도해요.'; paint(); notify(error.message, true); } }
+    } catch (error) { if (guard(id, actor, token)) { sendErrors.set(draftKey,'전송하지 못했어요. 보내기를 누르면 같은 메시지를 다시 시도해요.'); paint(); notify(error.message, true); } }
     finally { outgoing.busy = false; if (submit?.isConnected !== false) submit && (submit.disabled = false); }
   }
   async function submitAppointment(form) {

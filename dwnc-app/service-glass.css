@@ -95,6 +95,20 @@
 .community-tabs button{min-height:44px}
 .community-content>.head h2{font-size:20px;font-weight:600;letter-spacing:-.7px}
 .community-content>.head{margin-top:0;margin-bottom:14px}
+/* Keep secondary screens readable within the approved mobile canvas. */
+.content:not([data-page="home"]) .head>h1{min-width:0}
+.content:not([data-page="home"]) .row__body strong{white-space:normal;overflow-wrap:anywhere;line-height:1.5}
+.content:not([data-page="home"]) .row__body .meta{display:block;overflow-wrap:anywhere;line-height:1.65}
+.content:not([data-page="home"]) .row__body .meta>.ic{display:inline-block;vertical-align:-2px;margin-right:5px}
+.content:not([data-page="home"]) .gcard__body small{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.65;overflow-wrap:anywhere}
+.content[data-page="matches"] .schedule-section .row{align-items:flex-start}
+.content[data-page="matches"] .schedule-section .row>.sport{margin-top:3px}
+.content[data-page="matches"] .schedule-section .row__end{margin-top:3px;max-width:32%}
+.content:not([data-page="home"]) :is(.glass-section,.ranking-policy,.record-summary){margin-block:18px}
+.sheet__head h2{min-width:0;overflow-wrap:anywhere;line-height:1.4}
+.sheet__head>.icon-btn{flex:none}
+.sheet .info>span{min-width:0;overflow-wrap:anywhere}
+.sheet .form :is(label,fieldset),.auth-panel .form :is(label,fieldset){min-width:0}
 .person strong,.gcard__body strong{min-width:0;max-width:100%;overflow-wrap:anywhere;line-height:1.45}
 .schedule-section .block__head h2,.recommendation-section .block__head h2,.activity-records .block__head h2,.regional-rank .block__head h2{font-size:17px;font-weight:650}
 .recommendation-section .cards{margin-top:12px}

@@ -1,6 +1,9 @@
 /* Chat shares the existing 390px light glass service canvas. */
 .chat-view{min-width:0;color:var(--ink)}
 .chat-view .head h2{font-size:20px;font-weight:600;letter-spacing:-.7px}
+.chat-view>.head{display:grid;gap:8px;justify-content:stretch;align-items:start}
+.chat-view>.head h2{line-height:1.4;margin:0}
+.chat-view>.head .hint{margin:0}
 .chat-view .hint{font-size:12px;line-height:1.7;color:var(--ink2)}
 .chat-room-list{display:grid;gap:10px}
 .chat-room{width:100%;display:flex;align-items:center;gap:12px;min-height:96px;padding:16px;text-align:left;color:var(--ink);border:1px solid var(--service-edge);border-radius:24px;background:var(--service-glass);box-shadow:var(--service-shadow);backdrop-filter:blur(24px)}

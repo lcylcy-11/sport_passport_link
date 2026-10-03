@@ -57,7 +57,7 @@ function markNewConfirmedRecord(previous, next) {
   kongRewardUserId = id; homeCardFlipped = true;
   return true;
 }
-async function refreshChatState() {
+async function refreshChatState({protectForms = false} = {}) {
   if (!state || pending) return;
   const source = state.activeUserId;
   const result = await api.request('/api/state');
@@ -69,8 +69,39 @@ async function refreshChatState() {
     throw new api.RequestError(409,'다른 계정으로 변경되었습니다.','SESSION_CHANGED');
   }
   if (pending || result.revision < revision) return;
-  markNewConfirmedRecord(state,result.state);
-  state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision;
+  if (protectForms && (modal || profileEditOpen || document.activeElement?.closest('form'))) return;
+  const next = {...result.state,demoControls:result.demoControls === true};
+  const changed = JSON.stringify(state) !== JSON.stringify(next);
+  markNewConfirmedRecord(state,next);
+  state = next; revision = result.revision;
+  return changed;
+}
+
+// Refresh visible read-only pages too. Chat keeps its own draft-safe lane poll.
+// Forms retain their original snapshot so background updates cannot overwrite edits.
+let statePoll = null, statePollTimer = null, renderedState = null;
+async function refreshVisibleState() {
+  if (statePoll || !state || pending || document.hidden || modal || profileEditOpen || loadError || document.activeElement?.closest('form') || (route() === 'community' && communityTab === 'chats')) return;
+  const page = route(), hash = location.hash;
+  const operation = async () => {
+    try {
+      await refreshChatState({protectForms:true});
+      if (!state || renderedState === JSON.stringify(state) || pending || modal || profileEditOpen || document.activeElement?.closest('form')) return;
+      // A request may finish after navigation. Paint the current route from its fresh state.
+      const focus = focusKey(document.activeElement), scroll = window.scrollY;
+      render();
+      if (focus) root.querySelector(focus)?.focus({preventScroll:true});
+      if (page === route() && hash === location.hash) window.scrollTo({top:scroll,behavior:'instant'});
+    } catch (error) {
+      if (error.status === 401 && !pending) await loadState();
+    }
+  };
+  statePoll = operation();
+  try { await statePoll; } finally { statePoll = null; }
+}
+function startStatePoll() {
+  clearInterval(statePollTimer); statePollTimer = null;
+  if (!document.hidden) statePollTimer = setInterval(() => { void refreshVisibleState(); },5000);
 }
 
 function cancelKongReaction(forgetReward = false) {
@@ -529,6 +560,7 @@ function render() {
   if (page === 'home' && location.hash === '#/home' && homeCardFlipped && kongRewardUserId === me.id && !modalContent) { kongRewardUserId = null; animateKong(); }
   listAnimate = false;
   document.title = `beanifit · ${pageTitle[page]}`;
+  renderedState = JSON.stringify(state);
   if (page === 'community' && communityTab === 'chats' && !modalContent) chat.mount(root);
 }
 
@@ -718,9 +750,12 @@ root.addEventListener('submit', async (event) => {
   } catch (error) { feedback(error.message || '입력을 확인해 주세요.'); } finally { submittedForm = null; }
 });
 
-window.addEventListener('hashchange', () => { cardRequestId++; syncCommunityRoute(); homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong' || Boolean(kongRewardUserId); routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); });
+window.addEventListener('hashchange', () => { cardRequestId++; syncCommunityRoute(); homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong' || Boolean(kongRewardUserId); routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); void refreshVisibleState(); });
 window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => { cancelKongReaction(true); render(); });
-window.addEventListener('pagehide', () => { chat.dispose(); cancelKongReaction(true); });
+window.addEventListener('pagehide', () => { chat.dispose(); cancelKongReaction(true); clearInterval(statePollTimer); });
+window.addEventListener('pageshow', () => { startStatePoll(); void refreshVisibleState(); });
+window.addEventListener('focus', () => { void refreshVisibleState(); });
+document.addEventListener('visibilitychange', () => { startStatePoll(); void refreshVisibleState(); });
 window.addEventListener('keydown', (event) => {
   if (!modal) return;
   if (event.key === 'Escape') { closeModal(); return; }
@@ -737,3 +772,4 @@ syncCommunityRoute(); homeCardFlipped = new URLSearchParams(location.hash.split(
 routeModal();
 render();
 await loadState();
+startStatePoll();
