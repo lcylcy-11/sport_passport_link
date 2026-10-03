@@ -15,8 +15,8 @@ Node.js **24.15 이상, 24.x**와 Git이 필요합니다. 처음 패키지를 �
 새 폴더에서:
 
 ```powershell
-git clone --branch codex/dwnc-backend-auth https://github.com/lcylcy-11/sport_passport.git
-cd sport_passport
+git clone --branch codex/dwnc-backend-auth https://github.com/lcylcy-11/sport_passport_link.git
+cd sport_passport_link
 npm ci
 npm start
 ```

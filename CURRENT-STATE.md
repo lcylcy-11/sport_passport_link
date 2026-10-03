@@ -1,9 +1,17 @@
 # DWNC current state
 
-- Updated: 2026-10-03, Codex T11
-- Writer now: none
-- Checkpoint: T11 implementation 400798bf2f19f20cc9974755d0c6edbbf06efb5a on codex/dwnc-backend-auth; feature push read-back matched. Final handoff-only checkpoint: resolve with git log -1 -- CURRENT-STATE.md. origin/main remains c5f4de9b7541be194aec49292a299027b03a78d4. Existing desktop copies/design drafts remain untouched.
+- Updated: 2026-10-03, Codex T12 repository migration
+- Writer now: Codex
+- Checkpoint: T11 backend/auth/SQLite implementation on `codex/dwnc-backend-auth`; user designated it canonical and requested migration to `https://github.com/lcylcy-11/sport_passport_link`. The destination has `main` and `codex/dwnc-backend-auth`; handoff clone instructions now point there. Local verification is recorded under T12. Old `sport_passport` remains untouched and is retired for future work.
+- User decision 2026-10-03: use the backend/database branch as the source of truth; `sport_passport_link` is the repository for all future work. Preserve the old repository without using it as the working remote.
 - AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff PASS (400798b read back). Human acceptance, physical devices and deployment are separate.
+
+## T12 repository migration — 2026-10-03
+
+- User designated the backend/database branch `codex/dwnc-backend-auth` as canonical, requested it be pushed to the new `sport_passport_link` repository, and retired `sport_passport` for future work. The old repository was left unchanged.
+- The verified branch was pushed to the new repository as both `main` and `codex/dwnc-backend-auth`. `HANDOFF.md` clone instructions now use the new repository.
+- On this machine, locked dependency install completed with Node 24.19.0. `npm run check`: PASS (27/27 tests, strict API-boundary typecheck and build); `npm run test:e2e`: PASS (2/2 Chromium journeys); `npm run test:build`: PASS. Local app returned HTTP 200 at `/` and `/api/health` on port 4175 because 4174 was occupied; existing listener was not stopped.
+- Final remote configuration and read-back are pending; writer remains Codex until that completes.
 - User decision 2026-10-03: profile uses a passport-like format, but it is not named a passport ("여권 형식인거지 이름을 여권으로 하는건 아님").
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
 
