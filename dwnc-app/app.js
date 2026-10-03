@@ -2,6 +2,10 @@ import * as old from './domain.js';
 import * as d from './extended-domain.js';
 import { ic, installIcons } from './icons.js';
 import * as api from './api.js';
+import { deriveKongProfile, koreaToday } from './kong-profile.js';
+import { renderKongCharacter, renderKongHistory } from './kong-profile-view.js';
+import { renderPassportCard } from './passport-view.js';
+import { regionalRanking, matchingSuggestions, isPastSchedule } from './service-model.js';
 
 installIcons();
 const root = document.getElementById('app');
@@ -16,8 +20,8 @@ const dateText = (date) => { const [, month, day] = date.split('-').map(Number);
 const shortDate = (date) => { const [, month, day] = date.split('-').map(Number); return date === today() ? '오늘' : `${month}/${day} ${weekday(date)}`; };
 const paceText = (seconds) => seconds ? `${Math.floor(seconds / 60)}′${String(seconds % 60).padStart(2, '0')}″` : '—';
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const pages = ['home', 'matches', 'activity', 'people', 'groups', 'profile', 'ranking', 'notifications'];
-const pageTitle = { home: '홈', matches: '매칭', activity: '내 운동', people: '친구', groups: '그룹', profile: '프로필', ranking: '랭킹', notifications: '알림' };
+const pages = ['home', 'matches', 'community', 'ranking', 'notifications'];
+const pageTitle = { community: '커뮤니티', home: '홈', matches: '매칭', activity: '내 운동', people: '친구', groups: '그룹', profile: '프로필', ranking: '랭킹', notifications: '알림' };
 let state, revision = 0, loading = true, loadError = null, authMode = 'login', pending = false, modal = null, flash = null, cardUrl = null, cardRequestId = 0;
 const emptyFilters = () => ({ sport: '', format: '', region: '', venue: '', date: '', time: '', level: '', query: '', openOnly: true, minOpenSeats: '' });
 let filters = emptyFilters();
@@ -27,14 +31,42 @@ let submittedForm = null, returnFocus = null, returnScroll = 0;
 let advancedFiltersOpen = false, profileEditOpen = false, listAnimate = false;
 let rankFilter = { sport: 'tennis', region: '', venue: '', period: 'month', month: today().slice(0, 7) };
 // Motion bookkeeping: what changed since the last render decides which elements animate.
-let lastPage = null, lastModalKey = null, pulseId = null, pulseFor = null, pulseUntil = 0, newStampId = null, toastTimer = null, closing = false;
+let lastPage = null, lastModalKey = null, pulseId = null, pulseFor = null, pulseUntil = 0, toastTimer = null, closing = false;
+let kongReactionTimer = null, kongRewardUserId = null, homeCardFlipped = false, communityTab = 'friends';
+
+function cancelKongReaction(forgetReward = false) {
+  clearTimeout(kongReactionTimer);
+  kongReactionTimer = null;
+  if (forgetReward) kongRewardUserId = null;
+}
+// Replace only the illustration so reacting never loses keyboard focus or form drafts.
+function animateKong() {
+  const publicCard = modal?.type === 'profile';
+  const button = root.querySelector(`${publicCard ? '.sheet' : '.content'} .passport-back:not([inert]) .kong-mascot`);
+  if (!button || !state || (!publicCard && (route() !== 'home' || modal)) || reduceMotion()) return;
+  const person = user(publicCard ? modal.id : state.activeUserId);
+  const derived = deriveKongProfile(state, person.id, koreaToday());
+  if (!derived.total) return;
+  cancelKongReaction();
+  const art = button.querySelector('.kong-art');
+  art.innerHTML = renderKongCharacter(person, derived, { reaction: 'react', reducedMotion: false });
+  button.dataset.kongMotion = 'react';
+  const sourceUserId = state.activeUserId;
+  kongReactionTimer = setTimeout(() => {
+    kongReactionTimer = null;
+    if (state?.activeUserId !== sourceUserId || !button.isConnected || button.closest('.passport-back')?.inert) return;
+    art.innerHTML = renderKongCharacter(person, derived, { reducedMotion: reduceMotion() });
+    button.dataset.kongMotion = reduceMotion() ? 'static' : 'idle';
+  }, 1200);
+}
 
 async function loadState() {
+  cancelKongReaction(true);
   const ownsLock = !pending;
   if (ownsLock) { pending = true; root.inert = true; root.setAttribute('aria-busy','true'); }
   try {
     const result = await api.request('/api/state');
-    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; }
+    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; homeCardFlipped = false; }
     state = result.state; revision = result.revision; loadError = null;
     if (modal?.id && ['details','result'].includes(modal.type) && !match(modal.id)) modal = null;
   } catch (error) {
@@ -45,19 +77,22 @@ async function loadState() {
 
 async function save(type, payload, message, icon = 'check') {
   if (pending) return;
+  const sourceUserId = state.activeUserId;
+  const beforeTotal = type === 'result.save' ? deriveKongProfile(state, sourceUserId, koreaToday()).total : null;
   const submittedDraftKey = submittedForm ? draftKey(submittedForm) : null;
   pending = true; root.inert = true; root.setAttribute('aria-busy','true');
   showToast('저장 중…',false,'clock');
   try {
     const result = await api.command(type,payload,revision,state.activeUserId);
     state = result.state; revision = result.revision;
+    if (type === 'result.save' && state.activeUserId === sourceUserId && deriveKongProfile(state, sourceUserId, koreaToday()).total > beforeTotal) { kongRewardUserId = sourceUserId; homeCardFlipped = true; }
     if (result.id) pulseId = result.id;
     if (submittedDraftKey) drafts.delete(submittedDraftKey);
     if (!modal) modalStack.length = 0;
     flash = message ? { text: message, error: false, icon } : null;
     render(); return result;
   } catch (error) {
-    if (error.status === 401) { state = null; modal = null; drafts.clear(); authMode = 'login'; render(); }
+    if (error.status === 401) { cancelKongReaction(true); state = null; modal = null; drafts.clear(); authMode = 'login'; render(); }
     else if (['REVISION_CONFLICT','SESSION_CHANGED'].includes(error.code)) await loadState();
     throw error;
   } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }
@@ -65,7 +100,7 @@ async function save(type, payload, message, icon = 'check') {
 
 function authPage() {
   const signup = authMode === 'signup';
-  return `<main class="auth-screen"><a class="brand" href="#/home">DWNC<span>✳</span></a><section class="panel auth-panel"><h1>${signup ? '같이 운동해요' : '다시, 같이 움직여요'}</h1><p>${signup ? '여러 운동, 하나의 프로필' : '내 기록과 운동 친구를 만나세요'}</p><form id="auth-form" class="form">${signup ? '<label>이름<input name="name" required maxlength="24" autocomplete="nickname"></label><div class="grid2"><label>활동 지역<input name="region" required maxlength="30" placeholder="관악구"></label><label>연령대<select name="ageRange"><option>20대</option><option>30대</option><option>40대</option><option>50대 이상</option><option>미입력</option></select></label></div><fieldset class="pick"><legend>즐기는 운동</legend>' + old.SPORTS.map(sport => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" checked>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('') + '</fieldset>' : ''}<label>이메일<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>비밀번호<input name="password" type="password" required minlength="10" maxlength="128" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="10자 이상"></label>${signup ? '<label>비밀번호 확인<input name="confirmPassword" type="password" required minlength="10" maxlength="128" autocomplete="new-password"></label>' : ''}<button class="btn primary wide" type="submit">${signup ? '회원가입' : '로그인'}</button></form><button class="text-btn" data-action="auth-mode" data-id="${signup ? 'login' : 'signup'}">${signup ? '이미 계정이 있어요 · 로그인' : '처음이에요 · 회원가입'}</button></section></main>`;
+  return `<main class="auth-screen"><a class="brand" href="#/home">DWNC<span>✳</span></a><section class="panel auth-panel"><h1>${signup ? '같이 운동해요' : '다시, 같이 움직여요'}</h1><p>${signup ? '여러 운동, 하나의 프로필' : '내 기록과 운동 친구를 만나세요'}</p><form id="auth-form" class="form">${signup ? '<label>닉네임<input name="name" required maxlength="24" autocomplete="nickname"></label><div class="grid2"><label>활동 지역<input name="region" required maxlength="30" placeholder="관악구"></label><label>연령대<select name="ageRange"><option>20대</option><option>30대</option><option>40대</option><option>50대 이상</option><option>미입력</option></select></label></div><fieldset class="pick"><legend>즐기는 운동</legend>' + old.SPORTS.map(sport => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" checked>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('') + '</fieldset>' : ''}<label>이메일<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>비밀번호<input name="password" type="password" required minlength="10" maxlength="128" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="10자 이상"></label>${signup ? '<label>비밀번호 확인<input name="confirmPassword" type="password" required minlength="10" maxlength="128" autocomplete="new-password"></label>' : ''}<button class="btn primary wide" type="submit">${signup ? '회원가입' : '로그인'}</button></form><button class="text-btn" data-action="auth-mode" data-id="${signup ? 'login' : 'signup'}">${signup ? '이미 계정이 있어요 · 로그인' : '처음이에요 · 회원가입'}</button></section></main>`;
 }
 function showToast(text, error = false, icon = error ? 'alert' : 'check') {
   const node = toastNode;
@@ -143,7 +178,7 @@ function routeModal() {
 root.addEventListener('input', rememberDraft);
 root.addEventListener('change', rememberDraft);
 
-function route() { const name = location.hash.replace(/^#\//, '').split('?')[0]; return pages.includes(name) ? name : 'home'; }
+function route() { const name = location.hash.replace(/^#\//, '').split('?')[0]; const canonical = { profile: 'home', activity: 'matches', people: 'community', groups: 'community' }[name] || name; return pages.includes(canonical) ? canonical : 'home'; }
 function user(id) { return state.users.find((item) => item.id === id); }
 function group(id) { return state.groups.find((item) => item.id === id); }
 function match(id) { return state.matches.find((item) => item.id === id); }
@@ -200,58 +235,21 @@ function sportMetric(stats, sport) {
   if (sport === 'futsal') return { value: String(stats.futsal.mvp), label: 'MVP', sub: `${stats.futsal.games}경기` };
   return { value: paceText(stats.running.paceSec), label: '페이스', sub: `${stats.running.distanceKm}km` };
 }
-function playRing(identity) {
-  let start = 0;
-  const stops = identity.sports.filter((item) => item.sessions).map((item) => { const end = start + item.share * 360; const stop = `${sportColor[item.sport]} ${start.toFixed(1)}deg ${(end - 2).toFixed(1)}deg, transparent ${(end - 2).toFixed(1)}deg ${end.toFixed(1)}deg`; start = end; return stop; });
-  const fill = stops.length ? `conic-gradient(${stops.join(', ')})` : 'conic-gradient(#ffffff22 0deg 360deg)';
-  const label = identity.sports.map((item) => `${old.SPORT_LABEL[item.sport]} ${item.sessions}회`).join(', ');
-  return `<span class="ring" style="--ring:${fill}" role="img" aria-label="함께한 운동 ${identity.total}회: ${esc(label)}"><span><strong data-count="${identity.total}">${identity.total}</strong><small>운동</small></span></span>`;
-}
-// The signature view: one person, several sports, each judged by its own metric.
-function playCard(personId) {
-  const person = user(personId), identity = d.sportIdentity(state, personId);
-  if (!person || !identity) return '';
-  const tiles = identity.sports.map((item) => { const metric = sportMetric(identity.stats, item.sport); return `<li class="tile ${item.sport}">${ic(item.sport)}<strong>${esc(metric.value)}</strong><small>${metric.label}</small></li>`; }).join('');
-  return `<a class="playcard" href="#/profile" aria-label="${esc(person.name)}님의 프로필 열기"><span class="playcard__body">${playRing(identity)}<span class="playcard__who">${avatar(personId, 'md')}<strong>${esc(person.name)}</strong><span class="playcard__meta">${pill('ghost', 'star', d.mannerFor(state, personId).toFixed(1))}${pill('ghost', 'calendar', `이번 달 ${identity.monthTotal}`)}</span></span><span class="playcard__tag">${identity.sports.length}종목</span></span><ul class="tiles">${tiles}</ul></a>`;
-}
-const sportCode = { tennis: 'TEN', futsal: 'FUT', running: 'RUN' };
-const stampTilt = [-7, 5, -3, 8, -5, 3];
-const dotDate = (date) => date ? date.replaceAll('-', '.') : '—';
-function stampLabel({ match: item, result }, userId) {
-  if (item.sport === 'tennis') return result.noContest ? '미성립' : result.teams[result.winnerTeam].includes(userId) ? '승리' : '패배';
-  if (item.sport === 'futsal') return `${result.teamOutcome === 'win' ? '승' : result.teamOutcome === 'loss' ? '패' : '무'} ${result.scoreFor}:${result.scoreAgainst}${result.mvpUserId === userId ? ' MVP' : ''}`;
-  return `${result.entries[userId]?.distanceKm ?? 0}km`;
-}
-function stampMark(stamp, userId, index) {
-  const item = stamp.match, tilt = stampTilt[index % stampTilt.length];
-  if (!d.canViewMatch(state, item, state.activeUserId)) return `<span class="stamp private" style="--tilt:${tilt}deg" title="비공개 기록">${ic('lock')}<em>${dotDate(item.date).slice(5)}</em></span>`;
-  const partners = stamp.partners.map(name).join(', ');
-  return `<button type="button" class="stamp ${item.sport} ${newStampId === item.id ? 'fresh' : ''}" style="--tilt:${tilt}deg;--i:${index}" data-action="details" data-id="${esc(item.id)}" aria-label="${esc(`${dotDate(item.date)} ${item.venue} ${old.SPORT_LABEL[item.sport]} ${stampLabel(stamp, userId)}${partners ? `, 함께: ${partners}` : ''}`)}">${ic(item.sport)}<strong>${esc(item.venue)}</strong><span>${esc(stampLabel(stamp, userId))}</span><em>${dotDate(item.date).slice(5)}</em></button>`;
-}
-// Passport-like layout (identity page + stamp page); the product still calls it a profile.
-function profileBook(personId, compact = false) {
-  const person = user(personId); if (!person) return '';
-  const identity = d.sportIdentity(state, personId), book = d.stampsFor(state, personId);
-  const together = personId !== state.activeUserId ? d.playedTogether(state, state.activeUserId, personId) : null;
-  const photo = person.photo ? `<img src="${esc(person.photo)}" alt="">` : `<span aria-hidden="true">${esc(person.avatar || person.name.slice(-1))}</span>`;
-  const sports = identity.sports.map((item) => { const metric = sportMetric(identity.stats, item.sport), detail = person.sports[item.sport]; return `<li class="bsport ${item.sport}">${sportIcon(item.sport)}<span class="bsport__name"><strong>${old.SPORT_LABEL[item.sport]}<em>${esc(detail.level)}</em></strong><small>${esc(detail.experience)} · ${esc(detail.preference)}${item.sport === 'tennis' ? ` · NTRP ${esc(detail.ntrp)}` : ''}</small></span><span class="bsport__metric"><b>${esc(metric.value)}</b><small>${metric.label} · ${esc(metric.sub)}</small></span></li>`; }).join('');
-  const mrz = `DWNC<<${person.friendCode.replace(/[^A-Z0-9]/g, '')}<<${person.chosenSports.map((sport) => sportCode[sport]).join('<')}`.padEnd(40, '<').slice(0, 40);
-  const shown = compact ? book.stamps.slice(0, 6) : book.stamps;
-  const stamps = shown.map((stamp, index) => stampMark(stamp, personId, index)).join('') + (compact && book.stamps.length > shown.length ? `<span class="stamp more">+${book.stamps.length - shown.length}</span>` : compact ? '' : `<span class="stamp next" title="다음 도장">${ic('plus')}</span>`);
-  return `<section class="book ${compact ? 'compact' : ''}" aria-label="${esc(person.name)}님의 프로필"><div class="page id"><div class="page__head"><span class="brandmark">DWNC ✳</span><span class="no">No. ${esc(person.friendCode)}</span></div><div class="id__main"><div class="photo">${photo}</div><div class="id__fields"><strong class="id__name">${esc(person.name)}</strong><span>${ic('pin')}${esc(person.region)}</span><span>${ic('user')}${esc(person.ageRange)} · ${esc(person.gender || '미입력')}</span><span>${ic('star')}${d.mannerFor(state, personId).toFixed(1)}${together ? ` <b class="together">${ic('users')}함께 ${together}회</b>` : ''}</span><span title="첫 기록">${ic('calendar')}${dotDate(book.since)}</span></div></div>${person.bio ? `<p class="bio">${esc(person.bio)}</p>` : ''}<ul class="bsports">${sports}</ul><p class="mrz" aria-hidden="true">${esc(mrz)}</p></div><div class="page stamps"><div class="page__head"><span class="brandmark">STAMPS</span><span class="stamp-count" title="도장 · 구장 · 동네">${ic('check')}${book.stamps.length} ${ic('pin')}${book.venues} ${ic('globe')}${book.regions}</span></div>${book.stamps.length || !compact ? `<div class="stamp-grid">${stamps}</div>` : emptyState('sparkle', '아직 도장이 없어요')}</div></section>`;
-}
-function todaySummary(items) {
-  if (!items.length) return '';
-  const done = items.filter(({ result }) => result).length;
-  return `<span class="today-sum" title="오늘 ${items.length}건 중 ${done}건 완료">${items.map(({ match: item, result }) => `<i class="dot ${item.sport} ${result ? 'on' : ''}"></i>`).join('')}<b>${done}/${items.length}</b></span>`;
-}
+function homePage(me) { return profilePage(me); }
 
-function homePage(me) {
-  const todayItems = d.activityFor(state, me.id);
-  const suggestions = d.filterMatches(state, me.id, { openOnly: true, region: me.region }).filter((item) => item.hostId !== me.id && !item.applications.some((a) => a.userId === me.id)).slice(0, 4);
-  const note = state.dailyNotes[me.id]?.[today()] || '';
-  const todayCards = todayItems.map(({ match: item, result }) => `<button type="button" class="today ${item.sport} ${result ? 'is-done' : ''}" data-action="details" data-id="${esc(item.id)}"><span class="today__time">${esc(item.startTime)}</span>${sportIcon(item.sport)}<span class="today__body"><strong>${esc(item.title)}</strong>${result ? `<span class="today__res">${ic('check')}${esc(resultSummary(result, item, me.id))}</span>` : `<span class="meta">${ic('pin')}${esc(item.venue)}</span>`}</span>${result ? '' : item.status === 'cancelled' ? pill('bad', 'x', '취소') : avatarStack(old.participants(item), 3)}</button>`).join('');
-  return `<section class="hero"><h1>오늘도, 같이<br><em>움직여볼까요?</em></h1><div class="hero__actions"><a class="btn primary" href="#/matches">${ic('search')}매칭 찾기</a><button class="btn soft" data-action="create">${ic('plus')}자리 만들기</button></div></section>${playCard(me.id)}<section class="block"><div class="block__head"><h2>오늘 ${todaySummary(todayItems)}</h2><button class="icon-btn" data-action="export-card" data-kind="today" aria-label="오늘 운동 카드 공유" title="오늘 카드">${ic('share')}</button></div><div class="today-list">${todayItems.length ? todayCards : emptyState('calendar', '오늘 일정이 없어요', '<a class="btn soft sm" href="#/matches">' + ic('search') + '찾아보기</a>')}</div><form id="note-form" class="note"><label class="sr" for="daily-note">오늘의 한 줄</label>${ic('edit')}<input id="daily-note" name="note" maxlength="140" value="${esc(note)}" placeholder="오늘의 한 줄"><button class="icon-btn solid" type="submit" aria-label="한 줄 저장">${ic('check')}</button></form></section><section class="block"><div class="block__head"><h2>근처 자리</h2><a href="#/matches" class="more">전체${ic('right')}</a></div><div class="cards">${suggestions.length ? suggestions.map(matchCard).join('') : emptyState('pin', '근처에 열린 자리가 없어요', `<button class="btn soft sm" data-action="create">${ic('plus')}자리 만들기</button>`)}</div></section>`;
+function stat(icon, value, label, cls = '') { return `<div class="stat ${cls}">${ic(icon)}<strong>${esc(value)}</strong><small>${esc(label)}</small></div>`; }
+function workoutRow(item, me) {
+  const result = state.results.find(entry => entry.matchId === item.id);
+  return `<button type="button" class="row" data-action="details" data-id="${esc(item.id)}">${sportIcon(item.sport)}<span class="row__body"><strong>${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${esc(item.startTime)}–${esc(item.endTime)}</span><span class="meta">${ic('pin')}${esc(item.venue)}</span>${result ? `<span class="row__res">${esc(resultSummary(result,item,me.id))}</span>` : ''}</span><span class="row__end">${badge(item)}</span></button>`;
+}
+function mySchedule(me) {
+  return state.matches.filter(item => !isDone(item) && item.status !== 'cancelled' && (item.hostId === me.id || item.applications.some(a => a.userId === me.id && !a.closedReason && ['accepted','pending'].includes(a.status))))
+    .sort((a,b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+}
+function scheduleSection(me) {
+  const mine = mySchedule(me), current = mine.filter(item => !isPastSchedule(item)), past = mine.filter(item => isPastSchedule(item));
+  const pending = mine.filter(item => item.hostId === me.id).reduce((total,item) => total + item.applications.filter(a => a.status === 'pending' && !a.closedReason).length,0);
+  return `<section class="block schedule-section"><div class="block__head"><h2>내 운동 일정</h2><button type="button" class="btn soft sm" data-action="recent-records">${ic('clock')}최근 기록</button></div><div class="stats">${stat('calendar',current.filter(item=>item.date===koreaToday()).length,'오늘')}${stat('clock',current.length,'예정·신청')}${stat('userplus',pending,'응답 대기')}</div><div class="rows">${current.length ? current.map(item=>workoutRow(item,me)).join('') : emptyState('calendar','예정된 운동이 없어요','<p class="hint">아래에서 함께할 운동을 찾아보세요.</p>')}</div>${past.length ? `<details class="unfinished-records"><summary>기록을 기다리는 지난 일정 ${past.length}</summary><div class="rows">${past.map(item=>workoutRow(item,me)).join('')}</div></details>` : ''}</section>`;
 }
 
 function sportTabs(action, current, withAll = true) {
@@ -260,41 +258,41 @@ function sportTabs(action, current, withAll = true) {
 }
 function matchesPage(me) {
   const available = d.filterMatches(state, me.id, filters);
+  const suggestions = matchingSuggestions(state, me.id, { today: koreaToday(), limit: 3 });
+  const recommendations = `<section class="block recommendation-section"><div class="block__head"><h2>내 일정에 맞는 운동 친구</h2></div><p class="hint">선택한 종목과 지역에서, 확정 일정과 시간이 겹치지 않는 모집이에요.</p>${suggestions.length ? suggestions.map(({match:item,reasons}) => `<article class="recommendation"><p class="recommendation-reason">${reasons.map(esc).join(' · ')}</p>${matchCard(item)}<button type="button" class="row recommendation-host" data-action="view-profile" data-id="${esc(item.hostId)}">${avatar(item.hostId)}<span class="row__body"><strong>${esc(name(item.hostId))}</strong><small>운동 친구 신분증 보기</small></span>${ic('right')}</button></article>`).join('') : emptyState('users','일정에 맞는 열린 모집이 아직 없어요')}</section>`;
   const regions = [...new Set(d.visibleMatches(state, me.id).map(item => item.region))].sort();
   const advancedCount = ['format', 'venue', 'date', 'time', 'level', 'minOpenSeats'].filter(key => filters[key]).length;
-  return `<div class="head"><h1>매칭</h1><button class="btn primary" data-action="create">${ic('plus')}<span>자리 만들기</span></button></div>${sportTabs('filter-sport', filters.sport)}<form id="filter-form" class="filters" role="search"><input type="hidden" name="sport" value="${esc(filters.sport)}"><label class="search">${ic('search')}<span class="sr">검색</span><input id="filter-query" name="query" value="${esc(filters.query)}" placeholder="장소, 제목" autocomplete="off"></label><div class="filters__row"><label class="chip-select">${ic('pin')}<span class="sr">지역</span><select name="region">${select(regions, filters.region, '전체 지역')}</select></label><label class="toggle-chip"><input type="checkbox" name="openOnly" ${filters.openOnly ? 'checked' : ''}>${ic('check')}<span>신청 가능</span></label><button type="button" class="icon-btn ${advancedFiltersOpen || advancedCount ? 'on' : ''}" data-action="toggle-filters" aria-expanded="${advancedFiltersOpen}" aria-label="상세 필터">${ic('sliders')}${advancedCount ? `<b class="dot-count">${advancedCount}</b>` : ''}</button></div>${advancedFiltersOpen ? `<div class="filters__more"><label>방식<select name="format"><option value="">전체</option>${Object.entries(d.FORMAT_LABEL).map(([value, label]) => `<option value="${value}" ${filters.format === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>날짜<input type="date" name="date" value="${esc(filters.date)}"></label><label>시간<select name="time"><option value="">전체</option>${[['morning', '오전'], ['afternoon', '오후'], ['evening', '저녁']].map(([value, label]) => `<option value="${value}" ${filters.time === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>수준<select name="level">${select(old.LEVELS, filters.level, '전체')}</select></label><label>빈자리<select name="minOpenSeats">${select(['1', '2', '3', '4'], filters.minOpenSeats, '상관없음')}</select></label><label>장소<input name="venue" value="${esc(filters.venue)}" placeholder="구장"></label><button type="button" class="btn ghost sm" data-action="reset-filters">${ic('refresh')}초기화</button></div>` : `<input type="hidden" name="format" value="${esc(filters.format)}"><input type="hidden" name="date" value="${esc(filters.date)}"><input type="hidden" name="time" value="${esc(filters.time)}"><input type="hidden" name="level" value="${esc(filters.level)}"><input type="hidden" name="minOpenSeats" value="${esc(filters.minOpenSeats)}"><input type="hidden" name="venue" value="${esc(filters.venue)}">`}</form><div class="count">${available.length}개</div><div class="cards ${listAnimate ? 'enter' : ''}">${available.length ? available.map(matchCard).join('') : emptyState('search', '조건에 맞는 자리가 없어요', `<button class="btn ghost sm" data-action="reset-filters">${ic('refresh')}초기화</button><button class="btn primary sm" data-action="create">${ic('plus')}만들기</button>`)}</div>`;
+  return `<div class="head"><h1>매칭 · 내 운동</h1><button class="btn primary" data-action="create" aria-label="자리 만들기">${ic('plus')}<span>자리 만들기</span></button></div>${scheduleSection(me)}${recommendations}<section class="block matching-search"><div class="block__head"><h2>모든 모집 찾기</h2></div>${sportTabs('filter-sport', filters.sport)}<form id="filter-form" class="filters" role="search"><input type="hidden" name="sport" value="${esc(filters.sport)}"><label class="search">${ic('search')}<span class="sr">검색</span><input id="filter-query" name="query" value="${esc(filters.query)}" placeholder="장소, 제목" autocomplete="off"></label><div class="filters__row"><label class="chip-select">${ic('pin')}<span class="sr">지역</span><select name="region">${select(regions, filters.region, '전체 지역')}</select></label><label class="toggle-chip"><input type="checkbox" name="openOnly" ${filters.openOnly ? 'checked' : ''}>${ic('check')}<span>신청 가능</span></label><button type="button" class="icon-btn ${advancedFiltersOpen || advancedCount ? 'on' : ''}" data-action="toggle-filters" aria-expanded="${advancedFiltersOpen}" aria-label="상세 필터">${ic('sliders')}${advancedCount ? `<b class="dot-count">${advancedCount}</b>` : ''}</button></div>${advancedFiltersOpen ? `<div class="filters__more"><label>방식<select name="format"><option value="">전체</option>${Object.entries(d.FORMAT_LABEL).map(([value, label]) => `<option value="${value}" ${filters.format === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>날짜<input type="date" name="date" value="${esc(filters.date)}"></label><label>시간<select name="time"><option value="">전체</option>${[['morning', '오전'], ['afternoon', '오후'], ['evening', '저녁']].map(([value, label]) => `<option value="${value}" ${filters.time === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>수준<select name="level">${select(old.LEVELS, filters.level, '전체')}</select></label><label>빈자리<select name="minOpenSeats">${select(['1', '2', '3', '4'], filters.minOpenSeats, '상관없음')}</select></label><label>장소<input name="venue" value="${esc(filters.venue)}" placeholder="구장"></label><button type="button" class="btn ghost sm" data-action="reset-filters">${ic('refresh')}초기화</button></div>` : `<input type="hidden" name="format" value="${esc(filters.format)}"><input type="hidden" name="date" value="${esc(filters.date)}"><input type="hidden" name="time" value="${esc(filters.time)}"><input type="hidden" name="level" value="${esc(filters.level)}"><input type="hidden" name="minOpenSeats" value="${esc(filters.minOpenSeats)}"><input type="hidden" name="venue" value="${esc(filters.venue)}">`}</form><div class="count">${available.length}개</div><div class="cards ${listAnimate ? 'enter' : ''}">${available.length ? available.map(matchCard).join('') : emptyState('search', '조건에 맞는 자리가 없어요', `<button class="btn ghost sm" data-action="reset-filters">${ic('refresh')}초기화</button><button class="btn primary sm" data-action="create">${ic('plus')}만들기</button>`)}</div></section>`;
 }
 
-function activityPage(me) {
-  const mine = state.matches.filter((item) => item.hostId === me.id || item.applications.some((a) => a.userId === me.id)).sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-  const live = (item) => item.status === 'open' && !isDone(item) && !d.recruitmentClosed(item);
-  const waiting = mine.filter((item) => item.hostId === me.id && live(item)).reduce((sum, item) => sum + item.applications.filter((a) => a.status === 'pending').length, 0);
-  const upcoming = mine.filter((item) => live(item) && (item.hostId === me.id || myStatus(item) === 'accepted')).length;
-  const stat = (icon, value, label, cls = '') => `<div class="stat ${cls}">${ic(icon)}<strong>${value}</strong><small>${label}</small></div>`;
-  const sub = (item) => {
-    if (isDone(item)) return `<span class="row__res">${ic('check')}${esc(resultSummary(state.results.find((r) => r.matchId === item.id), item, me.id))}</span>`;
-    const pending = item.hostId === me.id ? item.applications.filter((a) => a.status === 'pending').length : 0;
-    return pending && live(item) ? pill('wait', 'userplus', `${pending}`) : avatarStack(old.participants(item), 3);
-  };
-  return `<div class="head"><h1>내 운동</h1><button class="btn primary" data-action="create">${ic('plus')}<span>자리 만들기</span></button></div><div class="stats">${stat('calendar', d.activityFor(state, me.id).length, '오늘')}${stat('clock', upcoming, '예정')}${stat('userplus', waiting, '응답 대기', waiting ? 'hot' : '')}</div><div class="rows">${mine.length ? mine.map((item) => `<button type="button" class="row" data-action="details" data-id="${esc(item.id)}">${sportIcon(item.sport)}<span class="row__body"><strong>${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${esc(item.startTime)} ${ic('pin')}${esc(item.venue)}</span></span><span class="row__end">${badge(item)}${sub(item)}</span></button>`).join('') : emptyState('calendar', '아직 참여한 운동이 없어요', `<a class="btn primary sm" href="#/matches">${ic('search')}매칭 찾기</a>`)}</div>`;
+function recordsModal(personId, me) {
+  const person = user(personId); if (!person) return '';
+  const derived = deriveKongProfile(state,personId,koreaToday());
+  return sheet(personId === me.id ? '내 운동 기록' : `${person.name}님의 운동 기록`, `<div class="activity-records">${renderKongHistory(person,derived,{own:personId===me.id})}<div class="record-summary"><span>누적 <b>${derived.total}회</b></span><span>최근 2주 <b>${derived.recent14}회</b></span></div><section class="block"><h2>전체 운동 기록</h2><div class="rows">${derived.recentResults.length ? derived.recentResults.map(({match:item})=>workoutRow(item,person)).join('') : emptyState('clock','아직 저장한 운동 기록이 없어요')}</div></section>${personId === me.id ? '<div class="sheet__actions"><a class="btn primary wide" href="#/home?face=kong">콩 키우기 카드 보기</a></div>' : ''}</div>`,{wide:true});
 }
 
 function profilePage(me) {
   const friends = d.friendsOf(state, me.id).length, groups = state.groups.filter((item) => item.memberIds.includes(me.id)).length;
   const incoming = state.friendRequests.filter((request) => request.toId === me.id && request.status === 'pending').length + state.invitations.filter((invite) => invite.toId === me.id && invite.status === 'pending').length;
-  const editor = `<form id="profile-form" class="editor"><div class="photo-row">${avatar(me.id, 'lg')}<label class="btn soft sm">${ic('camera')}사진<input id="profile-photo" class="sr" type="file" accept="image/png,image/jpeg,image/webp"></label>${me.photo ? `<button type="button" class="btn ghost sm" data-action="remove-photo">${ic('trash')}삭제</button>` : ''}</div><div class="grid2"><label>이름<input name="name" required maxlength="24" value="${esc(me.name)}"></label><label>지역<input name="region" required maxlength="30" value="${esc(me.region)}"></label><label>연령대<input name="ageRange" required value="${esc(me.ageRange)}"></label><label>성별<select name="gender">${select(['미입력', '여성', '남성', '기타'], me.gender)}</select></label><label>아이콘<select name="avatar">${select(d.AVATARS, me.avatar)}</select></label></div><fieldset class="pick"><legend>종목</legend>${old.SPORTS.map((sport) => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" ${me.chosenSports.includes(sport) ? 'checked' : ''}>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('')}</fieldset><label>소개<textarea name="bio" maxlength="180" rows="2">${esc(me.bio)}</textarea></label>${old.SPORTS.map((sport) => `<fieldset class="sport-edit s-${sport}" data-sport-editor="${sport}"><legend>${ic(sport)}${old.SPORT_LABEL[sport]}</legend><div class="grid2"><label>경력<input name="${sport}-experience" required value="${esc(me.sports[sport].experience)}"></label><label>수준<select name="${sport}-level">${select(old.LEVELS, me.sports[sport].level)}</select></label><label>${sport === 'tennis' ? '방식' : sport === 'futsal' ? '포지션' : '거리'}<input name="${sport}-preference" required value="${esc(me.sports[sport].preference)}"></label>${sport === 'tennis' ? `<label>NTRP<input type="number" name="tennis-ntrp" min="1" max="7" step="0.5" required value="${esc(me.sports.tennis.ntrp)}"></label>` : ''}</div></fieldset>`).join('')}<div class="sticky-actions"><button class="btn primary wide" type="submit">${ic('check')}저장</button></div></form>`;
-  return `<div class="head"><h1>프로필</h1><div class="head__actions"><button class="icon-btn ${profileEditOpen ? 'on' : ''}" data-action="toggle-edit" aria-expanded="${profileEditOpen}" aria-label="프로필 편집" title="편집">${ic('edit')}</button><button class="icon-btn" data-action="export-card" data-kind="profile" aria-label="프로필 카드 공유" title="공유">${ic('share')}</button></div></div>${profileEditOpen ? `<section class="panel edit-panel">${editor}</section>` : ''}${profileBook(me.id)}<div class="links"><a class="link-tile" href="#/people">${ic('users')}<span>친구</span><b>${friends}</b>${incoming ? `<b class="dot-count">${incoming}</b>` : ''}</a><a class="link-tile" href="#/groups">${ic('flag')}<span>그룹</span><b>${groups}</b></a></div><button class="text-btn" data-action="logout">로그아웃</button>`;
+  const editor = `<form id="profile-form" class="editor"><div class="photo-row">${avatar(me.id, 'lg')}<label class="btn soft sm">${ic('camera')}사진<input id="profile-photo" class="sr" type="file" accept="image/png,image/jpeg,image/webp"></label>${me.photo ? `<button type="button" class="btn ghost sm" data-action="remove-photo">${ic('trash')}삭제</button>` : ''}</div><div class="grid2"><label>닉네임<input name="name" required maxlength="24" value="${esc(me.name)}"></label><label>지역<input name="region" required maxlength="30" value="${esc(me.region)}"></label><label>나이 · 연령대<input name="ageRange" required value="${esc(me.ageRange)}"></label><label>성별<select name="gender">${select(['미입력', '여성', '남성', '기타'], me.gender)}</select></label><label>아이콘<select name="avatar">${select(d.AVATARS, me.avatar)}</select></label></div><fieldset class="pick"><legend>종목</legend>${old.SPORTS.map((sport) => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" ${me.chosenSports.includes(sport) ? 'checked' : ''}>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('')}</fieldset><label>소개<textarea name="bio" maxlength="180" rows="2">${esc(me.bio)}</textarea></label>${old.SPORTS.map((sport) => `<fieldset class="sport-edit s-${sport}" data-sport-editor="${sport}"><legend>${ic(sport)}${old.SPORT_LABEL[sport]}</legend><div class="grid2"><label>구력<input name="${sport}-experience" required value="${esc(me.sports[sport].experience)}"></label><label>수준<select name="${sport}-level">${select(old.LEVELS, me.sports[sport].level)}</select></label><label>${sport === 'tennis' ? '방식' : sport === 'futsal' ? '포지션' : '거리'}<input name="${sport}-preference" required value="${esc(me.sports[sport].preference)}"></label>${sport === 'tennis' ? `<label>NTRP<input type="number" name="tennis-ntrp" min="1" max="7" step="0.5" required value="${esc(me.sports.tennis.ntrp)}"></label>` : ''}</div></fieldset>`).join('')}<div class="sticky-actions"><button class="btn primary wide" type="submit">${ic('check')}저장</button></div></form>`;
+  const derived = deriveKongProfile(state,me.id,koreaToday());
+  const upcoming = mySchedule(me).filter(item => !isPastSchedule(item));
+  const note = state.dailyNotes[me.id]?.[today()] || '';
+  return `<div class="passport-home"><div class="head"><h1>홈</h1><div class="head__actions"><button class="icon-btn ${profileEditOpen ? 'on' : ''}" data-action="toggle-edit" aria-expanded="${profileEditOpen}" aria-label="프로필 편집">${ic('edit')}</button><button class="icon-btn" data-action="export-card" data-kind="profile" aria-label="프로필 카드 공유">${ic('share')}</button></div></div>${profileEditOpen ? `<section class="panel edit-panel">${editor}</section>` : ''}${renderPassportCard(state,me,derived,{flipped:homeCardFlipped,reducedMotion:reduceMotion(),own:true})}<a href="#/matches" class="row home-next-workout">${ic('calendar')}<span class="row__body"><strong>${upcoming.length ? esc(upcoming[0].title) : '다음 운동을 함께 찾아볼까요?'}</strong><span class="meta">${upcoming.length ? `${shortDate(upcoming[0].date)} ${esc(upcoming[0].startTime)} · ${esc(upcoming[0].venue)}` : '내 일정과 운동 친구를 한곳에서'}</span></span>${ic('right')}</a>${renderKongHistory(me,derived)}<button type="button" class="btn soft wide" data-action="recent-records">${ic('clock')}전체 운동 기록 보기</button><form id="note-form" class="note"><label class="sr" for="daily-note">오늘의 한 줄</label>${ic('edit')}<input id="daily-note" name="note" maxlength="140" value="${esc(note)}" placeholder="오늘의 한 줄"><button class="icon-btn solid" type="submit" aria-label="한 줄 저장">${ic('check')}</button></form><div class="links"><a class="link-tile" href="#/community?tab=friends">${ic('users')}<span>친구</span><b>${friends}</b>${incoming ? `<b class="dot-count">${incoming}</b>` : ''}</a><a class="link-tile" href="#/community?tab=groups">${ic('flag')}<span>그룹</span><b>${groups}</b></a></div><button class="text-btn" data-action="logout">로그아웃</button></div>`;
+
 }
 
 function rankingPage(me) {
-  const regions = [...new Set(state.matches.map((item) => item.region))].sort();
-  const venues = [...new Set(state.matches.filter((item) => !rankFilter.region || item.region === rankFilter.region).map((item) => item.venue))].sort();
-  let rows = d.ranking(state, rankFilter.sport, rankFilter), fallback = false;
-  if (!rows.length && rankFilter.period === 'month') { const allRows = d.ranking(state, rankFilter.sport, { ...rankFilter, period: 'all' }); if (allRows.length) { rows = allRows; fallback = true; } }
-  const metric = (stats) => rankFilter.sport === 'tennis' ? [`${stats.tennis.winRate}%`, `${stats.tennis.games}경기`] : rankFilter.sport === 'futsal' ? [`MVP ${stats.futsal.mvp}`, `${stats.futsal.games}경기`] : [paceText(stats.running.paceSec), `${stats.running.distanceKm}km`];
-  const podium = rows.slice(0, 3), rest = rows.slice(3);
-  const order = podium.length === 3 ? [1, 0, 2] : podium.length === 2 ? [1, 0] : [0];
-  return `<div class="head"><h1>랭킹</h1></div>${sportTabs('rank-sport', rankFilter.sport, false)}<form id="ranking-form" class="filters"><div class="filters__row"><label class="chip-select">${ic('pin')}<span class="sr">지역</span><select name="region">${select(regions, rankFilter.region, '전체 지역')}</select></label><label class="chip-select">${ic('flag')}<span class="sr">장소</span><select name="venue">${select(venues, rankFilter.venue, '전체 장소')}</select></label><div class="seg mini" role="group" aria-label="기간">${[['month', '이번 달'], ['all', '전체']].map(([value, label]) => `<button type="button" data-action="rank-period" data-id="${value}" aria-pressed="${rankFilter.period === value}">${label}</button>`).join('')}</div></div></form>${fallback ? `<p class="hint">${ic('info')}이번 달 기록이 없어 전체 기간</p>` : ''}${rows.length ? `<div class="podium ${listAnimate ? 'enter' : ''}">${order.map((index) => { const { user: person, stats } = podium[index]; const [value, sub] = metric(stats); return `<button type="button" class="podium__spot p${index + 1} ${person.id === me.id ? 'me' : ''}" data-action="view-profile" data-id="${esc(person.id)}"><span class="medal">${index + 1}</span>${avatar(person.id, 'lg')}<strong>${esc(person.name)}</strong><b>${esc(value)}</b><small>${esc(sub)}</small><span class="podium__bar"></span></button>`; }).join('')}</div>${rest.length ? `<div class="rows">${rest.map(({ user: person, stats }, index) => { const [value, sub] = metric(stats); return `<button type="button" class="row rank ${person.id === me.id ? 'me' : ''}" data-action="view-profile" data-id="${esc(person.id)}"><b class="rank__n">${index + 4}</b>${avatar(person.id)}<span class="row__body"><strong>${esc(person.name)}</strong><span class="meta">${esc(person.region)}</span></span><span class="rank__v"><b>${esc(value)}</b><small>${esc(sub)}</small></span></button>`; }).join('')}</div>` : ''}` : emptyState('trophy', '아직 기록이 없어요')}`;
+  const regions = [...new Set(state.users.map(person=>person.region).filter(Boolean))].sort();
+  const region = rankFilter.region || me.region;
+  const rows = regionalRanking(state,rankFilter.sport,{region,today:koreaToday()});
+  const career = months => months ? `${Math.floor(months/12) ? Math.floor(months/12)+'년 ' : ''}${months%12 ? months%12+'개월' : ''}`.trim() : '미입력';
+  return `<div class="head"><h1>지역 랭킹</h1>${pill('ghost','pin',esc(region))}</div><p class="hint">공개 운동 기록으로 같은 지역 친구들의 경기와 꾸준함을 함께 봐요.</p>${sportTabs('rank-sport',rankFilter.sport,false)}<form id="ranking-form" class="filters"><label class="chip-select">${ic('pin')}<span>활동 지역</span><select name="region">${select(regions,region)}</select></label></form><section class="regional-rank"><div class="rows ${listAnimate ? 'enter' : ''}">${rows.length ? rows.map((row,index)=>`<button type="button" class="row regional-rank-row ${row.user.id===me.id?'me':''}" data-action="view-profile" data-id="${esc(row.user.id)}"><b class="rank__n">${index+1}</b>${avatar(row.user.id)}<span class="row__body"><strong>${esc(row.user.name)}${row.user.id===me.id ? ' <small>나</small>' : ''}</strong><span class="rank-metrics"><span>${rankFilter.sport==='running' ? '승률 미적용' : row.stats[rankFilter.sport].games ? `승률 ${row.winRate}%` : '경기 없음'}</span><span>구력 ${esc(row.user.sports[rankFilter.sport].experience || career(row.careerMonths))}</span><span>최근 2주 ${row.recent14}회</span></span></span><span class="rank__v"><b>${row.score.toFixed(1)}</b><small>활동 점수</small></span></button>`).join('') : emptyState('trophy','아직 랭킹에 반영할 공개 기록이나 구력이 없어요')}</div></section><details class="ranking-policy"><summary>랭킹 계산 기준</summary><p>전체 공개 운동 기록 기준으로 승률 50점 + 구력 20점 + 최근 2주 운동 30점을 계산해요. 구력은 직접 입력한 연·개월을 최대 10년까지, 최근 기록은 이 종목의 실제 참석 운동을 최대 6회까지 반영해요.</p><p>경기가 없거나 구력을 해석할 수 없으면 해당 점수는 0점이에요. 러닝은 승률을 적용하지 않아 최대 50점이에요. 동점은 최근 운동, 승률, 닉네임 순으로 정렬해요.</p><p>현재 계산 비중은 서비스 검토용이며, 공식 실력 평가가 아니에요.</p></details>`;
+}
+
+function communityPage(me) {
+  const content = communityTab === 'groups' ? groupsPage(me).replace('<h1>그룹</h1>','<h2>그룹</h2>') : peoplePage(me).replace('<h1>친구</h1>','<h2>친구</h2>');
+  return `<div class="head"><h1>커뮤니티</h1></div><p class="hint">함께 움직이는 친구와 그룹을 만나요.</p><div class="seg community-tabs" role="group" aria-label="커뮤니티">${[['friends','친구','users'],['groups','그룹','flag']].map(([value,label,icon])=>`<button type="button" data-action="community-tab" data-id="${value}" aria-pressed="${communityTab===value}">${ic(icon)}${label}</button>`).join('')}</div><section class="community-content" data-community-tab="${communityTab}">${content}</section>`;
 }
 
 function peoplePage(me) {
@@ -308,7 +306,7 @@ function peoplePage(me) {
 }
 
 function groupsPage(me) {
-  return `<div class="head"><h1>그룹</h1><button class="btn primary" data-action="create-group">${ic('plus')}<span>그룹 만들기</span></button></div><div class="cards">${state.groups.length ? state.groups.map((item) => { const member = item.memberIds.includes(me.id); return `<button type="button" class="gcard ${member ? 'member' : ''}" data-action="group-detail" data-id="${esc(item.id)}"><span class="gcard__mark">${ic('flag')}</span><span class="gcard__body"><strong>${esc(item.name)}</strong><span class="meta">${ic('pin')}${esc(item.region)} ${ic('users')}${item.memberIds.length}</span>${item.description ? `<small>${esc(item.description)}</small>` : ''}</span>${avatarStack(item.memberIds, 3)}${member ? ic('right', 'chev') : pill('open', 'plus', '가입')}</button>`; }).join('') : emptyState('flag', '첫 그룹을 만들어 보세요')}</div>`;
+  return `<div class="head"><h1>그룹</h1><button class="btn primary" data-action="create-group" aria-label="그룹 만들기">${ic('plus')}<span>그룹 만들기</span></button></div><div class="cards">${state.groups.length ? state.groups.map((item) => { const member = item.memberIds.includes(me.id); return `<button type="button" class="gcard ${member ? 'member' : ''}" data-action="group-detail" data-id="${esc(item.id)}"><span class="gcard__mark">${ic('flag')}</span><span class="gcard__body"><strong>${esc(item.name)}</strong><span class="meta">${ic('pin')}${esc(item.region)} ${ic('users')}${item.memberIds.length}</span>${item.description ? `<small>${esc(item.description)}</small>` : ''}</span>${avatarStack(item.memberIds, 3)}${member ? ic('right', 'chev') : pill('open', 'plus', '가입')}</button>`; }).join('') : emptyState('flag', '첫 그룹을 만들어 보세요')}</div>`;
 }
 
 function relTime(iso) {
@@ -356,7 +354,7 @@ function detailModal(item, me) {
   const pending = item.applications.filter((a) => a.status === 'pending').length;
   const applicantRows = item.hostId === me.id && item.applications.length ? `<div class="block"><h3 class="sub">${ic('userplus')}신청 ${pending ? `<b>${pending}</b>` : ''}</h3><div class="rows">${item.applications.map((application) => { const together = d.playedTogether(state, me.id, application.userId); return `<div class="row static ${pulseId === `${item.id}:${application.userId}` ? 'pulse' : ''}"><button class="row__person" data-action="view-profile" data-id="${esc(application.userId)}">${avatar(application.userId)}<span class="row__body"><strong>${esc(name(application.userId))}</strong><span class="meta">${ic('target')}${esc(user(application.userId).sports[item.sport].level)} ${ic('star')}${d.mannerFor(state, application.userId).toFixed(1)}${together ? ` ${ic('users')}${together}` : ''}</span></span></button><span class="row__end">${application.status === 'pending' && item.status === 'open' && !result ? `<button ${d.recruitmentClosed(item) ? 'disabled' : ''} class="icon-btn solid ok" data-action="decide" data-id="${esc(item.id)}" data-user="${esc(application.userId)}" data-decision="accepted" aria-label="${esc(name(application.userId))} 수락">${ic('check')}</button><button class="icon-btn" data-action="decide" data-id="${esc(item.id)}" data-user="${esc(application.userId)}" data-decision="rejected" aria-label="${esc(name(application.userId))} 거절">${ic('x')}</button>` : application.closedReason ? pill('mute', 'lock', '종료') : application.status === 'accepted' ? pill('done', 'check', '확정') : pill('bad', 'x', '거절')}</span></div>`; }).join('')}</div></div>` : '';
   const ratingBlock = canRate ? `<div class="block"><h3 class="sub">${ic('star')}매너</h3><div class="rows">${result.attendedIds.filter((id) => id !== me.id).map((id) => `<div class="row static">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong></span><span class="row__end">${rated.includes(id) ? pill('done', 'check', '완료') : `<form class="rate-form stars" data-match="${esc(item.id)}" data-target="${esc(id)}">${[1, 2, 3, 4, 5].map((value) => `<button type="submit" name="value" value="${value}" aria-label="${value}점">${ic('star')}</button>`).join('')}</form>`}</span></div>`).join('')}</div></div>` : '';
-  const resultBlock = result ? `<div class="result-box">${ic('check')}<strong>${esc(resultSummary(result, item, me.id))}</strong>${result.attendedIds.length < old.participants(item).length ? `<small>${ic('users')}${result.attendedIds.length}/${old.participants(item).length}</small>` : ''}</div><ul class="breakdown">${old.participants(item).map((id) => { let detail = '불참'; if (result.attendedIds.includes(id)) { if (item.sport === 'tennis') { const team = result.teams.findIndex((members) => members.includes(id)); detail = result.noContest ? '미성립' : `${team === 0 ? 'A' : 'B'} · ${team === result.winnerTeam ? '승' : '패'}`; } else if (item.sport === 'futsal') detail = `${result.positions?.[id] || '—'}${result.mvpUserId === id ? ' · MVP' : ''}`; else { const entry = result.entries[id]; detail = `${entry.distanceKm}km · ${paceText(entry.paceSec)}`; } } return `<li class="${result.attendedIds.includes(id) ? '' : 'absent'}">${avatar(id, 'xs')}<span>${esc(name(id))}</span><b>${esc(detail)}</b>${item.sport === 'running' && result.reviews?.[id] ? `<small>“${esc(result.reviews[id])}”</small>` : ''}</li>`; }).join('')}</ul>` : '';
+  const resultBlock = result ? `<div class="result-box">${ic('check')}<strong>${esc(resultSummary(result, item, me.id))}</strong>${result.attendedIds.length < old.participants(item).length ? `<small>${ic('users')}${result.attendedIds.length}/${old.participants(item).length}</small>` : ''}</div><ul class="breakdown">${old.participants(item).map((id) => { let detail = '불참'; if (result.attendedIds.includes(id)) { if (item.sport === 'tennis') { const team = result.noContest ? -1 : result.teams.findIndex((members) => members.includes(id)); detail = result.noContest ? '미성립' : `${team === 0 ? 'A' : 'B'} · ${team === result.winnerTeam ? '승' : '패'}`; } else if (item.sport === 'futsal') detail = `${result.positions?.[id] || '—'}${result.mvpUserId === id ? ' · MVP' : ''}`; else { const entry = result.entries[id]; detail = `${entry.distanceKm}km · ${paceText(entry.paceSec)}`; } } return `<li class="${result.attendedIds.includes(id) ? '' : 'absent'}">${avatar(id, 'xs')}<span>${esc(name(id))}</span><b>${esc(detail)}</b>${item.sport === 'running' && result.reviews?.[id] ? `<small>“${esc(result.reviews[id])}”</small>` : ''}</li>`; }).join('')}</ul>` : '';
   const actions = [canApply ? `<button class="btn primary wide" data-action="apply" data-id="${esc(item.id)}">${ic('send')}참여 신청</button>` : '', canRecord ? `<button class="btn primary wide" data-action="result" data-id="${esc(item.id)}">${ic('check')}결과 기록</button>` : '', canWithdraw ? `<button class="btn ghost" data-action="withdraw" data-id="${esc(item.id)}" aria-label="신청·참가 철회">${ic('undo')}철회</button>` : '', item.hostId === me.id && item.status === 'open' && !result ? `<button class="btn ghost danger" data-action="cancel-match" data-id="${esc(item.id)}" aria-label="자리 취소">${ic('trash')}취소</button>` : ''].filter(Boolean).join('');
   const body = `<div class="detail-top ${item.sport}">${sportIcon(item.sport, 'lg')}<span class="detail-top__kind">${old.SPORT_LABEL[item.sport]} · ${d.FORMAT_LABEL[item.format]}</span>${badge(item)}</div>${fitChips(item)}<div class="info"><span>${ic('calendar')}${dateText(item.date)} ${esc(item.startTime)}–${esc(item.endTime)}</span><span>${ic('pin')}${esc(item.venue)} · ${esc(item.region)}</span><span>${ic('target')}${esc(item.level)} ${seatDots(item)}</span>${item.visibility !== 'public' ? `<span>${ic(item.visibility === 'group' ? 'flag' : 'users')}${item.groupId ? esc(group(item.groupId)?.name) : d.VISIBILITY_LABEL[item.visibility]}</span>` : ''}</div><button class="host" data-action="view-profile" data-id="${esc(item.hostId)}">${avatar(item.hostId)}<span class="host__who"><strong>${esc(name(item.hostId))}</strong><small>${ic('star')}${d.mannerFor(state, item.hostId).toFixed(1)}</small></span>${pill('mine', 'flag', '모집')}${ic('right', 'chev')}</button>${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}<div class="block"><h3 class="sub">${ic('users')}참가 <b>${old.participants(item).length}/${item.capacity}</b></h3><div class="people compact">${old.participants(item).map((id) => `<button class="person" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<strong>${esc(name(id))}</strong></button>`).join('')}</div></div>${applicantRows}${resultBlock}${ratingBlock}${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`;
   return sheet(item.title, body, { wide: true, tone: item.sport });
@@ -379,7 +377,7 @@ function profileModal(id, me) {
   const friendship = d.friendsOf(state, me.id).includes(id);
   const hasPending = state.friendRequests.some((request) => [request.fromId, request.toId].includes(id) && [request.fromId, request.toId].includes(me.id) && request.status === 'pending');
   const actions = [id !== me.id && !friendship && !hasPending ? `<button class="btn primary wide" data-action="friend-direct" data-id="${esc(id)}">${ic('userplus')}친구 신청</button>` : '', friendship ? `<button class="btn primary wide" data-action="invite" data-id="${esc(id)}">${ic('send')}운동 초대</button>` : '', hasPending ? pill('wait', 'clock', '신청 대기') : ''].filter(Boolean).join('');
-  return sheet(person.name, `${profileBook(id, true)}${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`, { wide: true });
+  return sheet(person.name, `${renderPassportCard(state,person,deriveKongProfile(state,id,koreaToday()),{flipped:Boolean(modal?.passportFlipped),reducedMotion:reduceMotion(),own:false})}<button type="button" class="btn soft wide" data-action="recent-records" data-user="${esc(id)}">${ic('clock')}운동 기록 보기</button>${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`, { wide: true });
 }
 function inviteModal(targetId, me) {
   const available = state.matches.filter((item) => item.hostId === me.id && item.status === 'open' && !isDone(item) && !d.recruitmentClosed(item) && old.openSeats(item) && d.canViewMatch(state, item, targetId) && !item.applications.some((a) => a.userId === targetId) && !state.invitations.some((invite) => invite.toId === targetId && invite.matchId === item.id && invite.status === 'pending'));
@@ -394,42 +392,31 @@ function cardLoadingModal() { return sheet('카드 만드는 중', '<div class="
 function cancelConfirmModal(item) {
   return sheet('자리 취소', `<div class="confirm">${ic('alert')}<p><strong>${esc(item.title)}</strong></p></div><div class="sheet__actions"><button class="btn ghost" data-action="close">유지</button><button class="btn danger wide" data-action="confirm-cancel" data-id="${esc(item.id)}">${ic('trash')}취소 확정</button></div>`);
 }
-// A recorded result is stamped into the book: show the stamp landing, then let it go.
-function showCelebrate(matchId) {
-  const me = user(state.activeUserId), item = match(matchId);
-  document.querySelector('.celebrate')?.remove();
-  const stamp = d.stampsFor(state, me.id).stamps.find((entry) => entry.match.id === matchId);
-  const node = document.createElement('div');
-  node.className = 'celebrate'; node.setAttribute('role', 'status'); node.setAttribute('aria-label', '기록 완료, 도장 획득');
-  node.innerHTML = `<div class="celebrate__stamp stamp ${item?.sport || ''}">${item ? ic(item.sport) : ic('check')}<strong>${esc(item?.venue || '')}</strong><span>${esc(stamp ? stampLabel(stamp, me.id) : '기록 완료')}</span><em>${dotDate(item?.date || today()).slice(5)}</em></div>${Array.from({ length: 12 }, (_, index) => `<i class="spark" style="--a:${index * 30}deg"></i>`).join('')}`;
-  let gone = false;
-  const dismiss = () => { if (gone) return; gone = true; node.classList.add('out'); setTimeout(() => node.remove(), 280); };
-  node.addEventListener('click', dismiss);
-  document.body.append(node);
-  setTimeout(dismiss, 1900);
-}
+
 
 function render() {
+  cancelKongReaction();
   if (loading) { root.innerHTML = '<main class="recovery" role="status">운동 기록을 불러오는 중…</main>'; return; }
   if (loadError) {
     document.body.classList.remove('dialog-open');
     root.innerHTML = `<main class="recovery">${ic('alert')}<h1>기록을 불러오지 못했어요</h1><p>${esc(loadError)}</p><button class="btn primary" data-action="reload-state">${ic('refresh')}다시 시도</button></main>`;
     return;
   }
-  if (!state) { document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; return; }
+  if (!state) { cancelKongReaction(true); document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; return; }
   const me = user(state.activeUserId);
   const page = route();
+  if (kongRewardUserId && kongRewardUserId !== me.id) kongRewardUserId = null;
   // A highlight survives the follow-up route render, then expires.
   if (pulseId && pulseId !== pulseFor) { pulseFor = pulseId; pulseUntil = performance.now() + 700; }
   if (pulseId && performance.now() >= pulseUntil) { pulseId = null; pulseFor = null; }
-  const pageViews = { home: homePage, matches: matchesPage, activity: activityPage, people: peoplePage, groups: groupsPage, profile: profilePage, ranking: rankingPage, notifications: notificationsPage };
+  const pageViews = { home: homePage, matches: matchesPage, community: communityPage, ranking: rankingPage, notifications: notificationsPage };
   const unread = state.notifications.filter((item) => item.userId === me.id && !item.read).length;
-  const modalContent = modal ? modal.type === 'create' ? createModal(me, modal.groupId) : modal.type === 'details' ? detailModal(match(modal.id), me) : modal.type === 'result' ? resultModal(match(modal.id)) : modal.type === 'profile' ? profileModal(modal.id, me) : modal.type === 'invite' ? inviteModal(modal.id, me) : modal.type === 'group-create' ? groupCreateModal(me) : modal.type === 'group-detail' ? groupDetailModal(group(modal.id), me) : modal.type === 'cancel-confirm' ? cancelConfirmModal(match(modal.id)) : modal.type === 'card-loading' ? cardLoadingModal() : cardModal() : '';
+  const modalContent = modal ? modal.type === 'create' ? createModal(me, modal.groupId) : modal.type === 'details' ? detailModal(match(modal.id), me) : modal.type === 'result' ? resultModal(match(modal.id)) : modal.type === 'profile' ? profileModal(modal.id, me) : modal.type === 'records' ? recordsModal(modal.id || me.id, me) : modal.type === 'invite' ? inviteModal(modal.id, me) : modal.type === 'group-create' ? groupCreateModal(me) : modal.type === 'group-detail' ? groupDetailModal(group(modal.id), me) : modal.type === 'cancel-confirm' ? cancelConfirmModal(match(modal.id)) : modal.type === 'card-loading' ? cardLoadingModal() : cardModal() : '';
   const entering = page !== lastPage; lastPage = page;
   const modalKey = modal ? `${modal.type}:${modal.id || modal.kind || ''}` : null;
   const modalEnter = modalKey && modalKey !== lastModalKey; lastModalKey = modalKey;
-  const switcher = `<a href="#/profile" class="who">${avatar(me.id, 'sm')}<span class="who__name">${esc(me.name)}</span></a><button class="icon-btn" data-action="reload-state" aria-label="새로고침">${ic('refresh')}</button>`;
-  root.innerHTML = `<div class="shell"><aside class="side ${entering ? 'moved' : ''}"><a href="#/home" class="brand">DWNC<span>✳</span></a><nav aria-label="주 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}${navLink('people', '친구', 'users')}${navLink('groups', '그룹', 'flag')}${navLink('notifications', '알림', 'bell', unread)}</nav></aside><div class="main"><header class="top"><a href="#/home" class="brand">DWNC<span>✳</span></a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'search')}${navLink('activity', '내 운동', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('profile', '프로필', 'user')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
+  const switcher = `<a href="#/home" class="who">${avatar(me.id, 'sm')}<span class="who__name">${esc(me.name)}</span></a><button class="icon-btn" data-action="reload-state" aria-label="새로고침">${ic('refresh')}</button>`;
+  root.innerHTML = `<div class="shell"><div class="main"><header class="top"><a href="#/home" class="brand">DWNC<span>✳</span></a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('community', '커뮤니티', 'users')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
   restoreDrafts();
   document.body.classList.toggle('dialog-open', Boolean(modalContent));
   root.querySelector('.shell').inert = Boolean(modalContent);
@@ -437,19 +424,11 @@ function render() {
   if (modalContent) root.querySelector('[role="dialog"]')?.focus({ preventScroll: true });
   if (pulseId) root.querySelectorAll(`[data-id="${CSS.escape(pulseId)}"]`).forEach((node) => node.classList.add('pulse'));
   if (flash) { const { text, error, icon } = flash; flash = null; showToast(text, error, icon); }
-  if (entering && page === 'home') countUp();
-  if (page === 'profile' && newStampId) newStampId = null;
+  if (page === 'home' && location.hash === '#/home' && homeCardFlipped && kongRewardUserId === me.id && !modalContent) { kongRewardUserId = null; animateKong(); }
   listAnimate = false;
   document.title = `DWNC · ${pageTitle[page]}`;
 }
-function countUp() {
-  if (reduceMotion()) return;
-  root.querySelectorAll('[data-count]').forEach((node) => {
-    const target = Number(node.dataset.count), started = performance.now();
-    const step = (now) => { const t = Math.min(1, (now - started) / 700); node.textContent = Math.round(target * (1 - (1 - t) ** 3)); if (t < 1) requestAnimationFrame(step); };
-    node.textContent = '0'; requestAnimationFrame(step);
-  });
-}
+
 
 function setCreateControls() {
   const sport = root.querySelector('#create-form [name="sport"]:checked')?.value;
@@ -495,11 +474,31 @@ root.addEventListener('click', async (event) => {
   let exportRequestId = null;
   try {
     if (action === 'close') closeModal();
+    else if (action === 'community-tab') { communityTab = id === 'groups' ? 'groups' : 'friends'; render(); }
+    else if (action === 'flip-passport') {
+      const card = button.closest('.passport-card')?.querySelector('.passport-flip');
+      if (!card) return;
+      const flipped = card.dataset.flipped !== 'true';
+      card.dataset.flipped = String(flipped);
+      for (const face of card.querySelectorAll('.passport-face')) { const hidden = face.classList.contains('passport-front') ? flipped : !flipped; face.inert = hidden; face.setAttribute('aria-hidden',String(hidden)); }
+      button.setAttribute('aria-pressed',String(flipped)); button.textContent = flipped ? '신분증 보기' : '콩 키우기 보기';
+      if (card.closest('.content')) homeCardFlipped = flipped; else if (modal?.type === 'profile') modal.passportFlipped = flipped;
+      if (!flipped) cancelKongReaction(true);
+      const mascot = card.querySelector('.kong-mascot');
+      if (mascot?.dataset.kongMotion === 'react') {
+        const person = user(button.dataset.user), derived = deriveKongProfile(state,person.id,koreaToday());
+        mascot.querySelector('.kong-art').innerHTML = renderKongCharacter(person,derived,{reducedMotion:reduceMotion()});
+        mascot.dataset.kongMotion = derived.total && !reduceMotion() ? 'idle' : 'static';
+      }
+    }
+    else if (action === 'recent-records') openModal({type:'records',id:userId || state.activeUserId},button);
+    else if (action === 'kong-react') animateKong();
     else if (action === 'reload-state') { loadError = null; await loadState(); }
     else if (action === 'auth-mode') { authMode = id; render(); }
     else if (action === 'logout') {
+      cancelKongReaction(true);
       pending = true; root.inert = true;
-      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; lastPage = null; authMode = 'login'; render(); }
+      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; homeCardFlipped = false; lastPage = null; authMode = 'login'; render(); }
       finally { pending = false; root.inert = false; }
     }
     else if (action === 'create') { openModal({ type: 'create' }, button); setCreateControls(); restoreDrafts(); setCreateVisibility(); }
@@ -590,7 +589,7 @@ root.addEventListener('submit', async (event) => {
     if (form.id === 'note-form') { await save('note.save', {date:today(),text:values.note}, '한 줄 저장', 'edit'); return; }
     if (form.id === 'friend-form') { await save('friend.request', {code:values.code}, '친구 신청 보냄', 'userplus'); return; }
     if (form.id === 'group-form') { modal = null; await save('group.create', values, '그룹 생성', 'flag'); return; }
-    if (form.id === 'create-form') { modal = null; await save('match.create', values, '자리 등록', 'plus'); location.hash = '#/activity'; return; }
+    if (form.id === 'create-form') { modal = null; await save('match.create', values, '자리 등록', 'plus'); location.hash = '#/matches'; return; }
     if (form.id === 'profile-form') {
       const sports = Object.fromEntries(formData.getAll('chosenSports').map((sport) => [sport, { experience: values[`${sport}-experience`], level: values[`${sport}-level`], preference: values[`${sport}-preference`], ...(sport === 'tennis' ? { ntrp: values['tennis-ntrp'] } : {}) }]));
       const payload = {name:values.name,region:values.region,ageRange:values.ageRange,gender:values.gender,bio:values.bio,avatar:values.avatar,chosenSports:formData.getAll('chosenSports'),sports}; await save('profile.update', payload, '프로필 저장', 'check'); profileEditOpen = false; render(); return;
@@ -603,27 +602,31 @@ root.addEventListener('submit', async (event) => {
       else if (item.sport === 'futsal') payload = { ...payload, scoreFor: values.scoreFor, scoreAgainst: values.scoreAgainst, mvpUserId: values.mvpUserId, positions: Object.fromEntries(old.participants(item).map((id) => [id, values[`position-${id}`]])) };
       else payload = { ...payload, entries: Object.fromEntries(attendedIds.map((id) => { const [minute, second] = String(values[`pace-${id}`] || '').split(':').map(Number); return [id, { distanceKm: values[`distance-${id}`], paceSec: minute * 60 + second }]; })), reviews: Object.fromEntries(attendedIds.map((id) => [id, values[`review-${id}`]])) };
       modal = null; modalStack.length = 0;
-      newStampId = item.id; pulseId = item.id; await save('result.save', {matchId:item.id,data:payload}, '기록 완료 · 도장 획득', 'check');
-      if (!reduceMotion()) showCelebrate(item.id);
+      const previousTotal = deriveKongProfile(state,state.activeUserId,koreaToday()).total; pulseId = item.id; const saved = await save('result.save', {matchId:item.id,data:payload}, '운동 기록 저장 · 콩이 자랐어요', 'check');
+      if (saved && deriveKongProfile(state,state.activeUserId,koreaToday()).total > previousTotal && location.hash !== '#/home') location.hash = '#/home';
+
       return;
     }
     if (form.classList.contains('rate-form')) { modal = { type: 'details', id: form.dataset.match }; await save('rating.save', {matchId:form.dataset.match,targetId:form.dataset.target,value:values.value}, `매너 ${values.value}점`, 'star'); }
   } catch (error) { feedback(error.message || '입력을 확인해 주세요.'); } finally { submittedForm = null; }
 });
 
-window.addEventListener('hashchange', () => { cardRequestId++; routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); });
+window.addEventListener('hashchange', () => { cardRequestId++; communityTab = location.hash.startsWith('#/groups') || new URLSearchParams(location.hash.split('?')[1] || '').get('tab') === 'groups' ? 'groups' : 'friends'; homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong' || Boolean(kongRewardUserId); routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); });
+window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => { cancelKongReaction(true); render(); });
+window.addEventListener('pagehide', () => cancelKongReaction(true));
 window.addEventListener('keydown', (event) => {
   if (!modal) return;
   if (event.key === 'Escape') { closeModal(); return; }
   if (event.key !== 'Tab') return;
   const dialog = root.querySelector('[role="dialog"]');
-  const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')].filter((element) => element.offsetParent !== null);
+  const focusable = [...dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]')].filter((element) => element.offsetParent !== null && !element.closest('[inert]'));
   if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
   const first = focusable[0], last = focusable.at(-1);
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   else if (document.activeElement === dialog) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
 });
+communityTab = location.hash.startsWith('#/groups') || new URLSearchParams(location.hash.split('?')[1] || '').get('tab') === 'groups' ? 'groups' : 'friends'; homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong';
 routeModal();
 render();
 await loadState();
