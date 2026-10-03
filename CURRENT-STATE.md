@@ -1,9 +1,9 @@
 # DWNC current state
 
 - Updated: 2026-10-03, Codex T11
-- Writer now: Codex (T11, isolated checkout codex/dwnc-backend-auth)
-- Checkpoint: T10 UI polish commit (resolve with `git log -1 -- dwnc-app/app.css`); T9 `ae3a8d9`, T8 `07518da`. Existing `submit-before/` remains unrelated and protected. Remote: `https://github.com/lcylcy-11/sport_passport` (private, pushed by user request 2026-10-03).
-- AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff UNVERIFIED until read-back. Human acceptance, physical devices and deployment are separate.
+- Writer now: none
+- Checkpoint: T11 implementation 400798bf2f19f20cc9974755d0c6edbbf06efb5a on codex/dwnc-backend-auth; feature push read-back matched. Final handoff-only checkpoint: resolve with git log -1 -- CURRENT-STATE.md. origin/main remains c5f4de9b7541be194aec49292a299027b03a78d4. Existing desktop copies/design drafts remain untouched.
+- AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff PASS (400798b read back). Human acceptance, physical devices and deployment are separate.
 - User decision 2026-10-03: profile uses a passport-like format, but it is not named a passport ("여권 형식인거지 이름을 여권으로 하는건 아님").
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
 
@@ -24,13 +24,14 @@
 - Fixed during QA: long-name top-bar overflow (logout moved to profile), signup mode surviving logout, stale cross-tab account writes, migration startup/close synchronization. No new visual direction or sport was introduced.
 - Runtime entry: npm start, http://127.0.0.1:4174/#/home; GET / and /api/health read back 200. Laptop uses feature-branch clone + npm ci + npm start. HANDOFF.md includes two-account demo, env/migration/seed and backup boundaries; historical main demo script is marked in HACKATHON-PREP.md.
 - Remaining: external DB/real accounts/deployment UNVERIFIED and not performed; email verification/reset/deletion/production review remain a separate task; manual refresh and global revisions are documented limits; physical phones/human visual acceptance UNVERIFIED. Source model/effort requested GPT-6.1 Sol High, execution metadata unavailable (UNVERIFIED), no subagents.
-- Stop condition: record verified feature commit, push only codex/dwnc-backend-auth under the added user approval, read back remote; release writer. Do not change main, deploy, create external credentials or start a new feature.
+- Finish: implementation 400798b committed with explicit paths and pushed to codex/dwnc-backend-auth under the added user approval; git ls-remote matched 400798bf2f19f20cc9974755d0c6edbbf06efb5a and main c5f4de9b7541be194aec49292a299027b03a78d4. Staged credential/runtime path scan PASS (27 files); env example empty, no DB/keys included. Writer released; this handoff-only update gets a separate commit. No further feature starts.
+- Next owner: new chat recommended after team demo; Codex GPT-6.1 Sol High for clearly scoped follow-up. First message: Read HANDOFF.md and CURRENT-STATE.md, reproduce the two-account local demo, then plan the team-approved email/auth/database work without deploying or creating external credentials.
 
 ## Requests and finite finish line
 
 | ID | User request / acceptance | Owner | Status | Evidence |
 |---|---|---|---|---|
-| T11 | Actual auth + shared SQLite backend + per-user permissions + frontend + tested laptop handoff; approved feature-branch commit/push | Codex | PASS (local); GitHub handoff UNVERIFIED | 27/27 tests, 2/2 real Chromium journeys, typecheck/build/smoke; HANDOFF.md. Remote read-back pending |
+| T11 | Actual auth + shared SQLite backend + per-user permissions + frontend + tested laptop handoff; approved feature-branch commit/push | Codex | PASS | 27/27 tests, 2/2 real Chromium journeys, typecheck/build/smoke; HANDOFF.md; implementation 400798b pushed and read back, main unchanged |
 | T1 | Implement the DWNC brief: demo users, profiles, tennis/futsal/running, filter/create/apply/accept, results, today dashboard, ranking | design_preview → Codex Main integration | PASS | Local app at `http://127.0.0.1:4174/#/home`; final syntax and 7/7 domain tests PASS. Main's real browser critical journeys, all five pages at 390px, refresh, history, and console checks PASS. Human product acceptance is separate. |
 | T2 | Make three design drafts for the user to compare and decide | design_preview → Codex Main | PASS | Three drafts render at `http://127.0.0.1:4173/#a`, `#b`, `#c`. Syntax, desktop and mobile viewing, mouse/keyboard switching, direct hash navigation and toggle read-back PASS. User selected A. |
 | T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit `390be03`. |
@@ -144,7 +145,7 @@ T7 implementation and local verification PASS. No required AI task remains. T6 f
 - Official alternatives: Plab Football, Strava, BAND. Strava official documentation directly opened; Plab/BAND official-domain search text available but direct fetch denied. No market/user-count claims inferred.
 - First-pass audit: PASS as a bounded evidence-backed deliverable; implementation rework: 0 (not authorized). Cost/usage and model comparison UNVERIFIED. Human experience/product acceptance remains separate; release not requested.
 - Changed paths only `T6-AUDIT.md`, `CURRENT-STATE.md`. Screenshot evidence stored outside repo in the authorized visualization directory and linked in the report. Protected `submit-before/` and `design-preview/` untouched. Recovery: revert only the audit docs commit if required.
-- Writer now: Codex (T11, isolated checkout codex/dwnc-backend-auth). Stop condition met after report/tracker verification and explicit-path commit; no automatic fixes, further audit, deployment or messages to another chat.
+- Writer now: none. Stop condition met after report/tracker verification and explicit-path commit; no automatic fixes, further audit, deployment or messages to another chat.
 
 ## T3–T5 final integration evidence — 2026-09-30
 
