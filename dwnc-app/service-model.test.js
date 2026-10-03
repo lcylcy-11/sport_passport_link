@@ -161,3 +161,27 @@ test('schedule past cutoff uses Korean end time including the exact boundary wit
   assert.deepEqual([ended, boundary, later, previous, tomorrow].map((item) => call('isPastSchedule', item, clock)), [true, true, false, true, false]);
   assert.equal(ended.status, 'open');
 });
+
+test('closed recruitment on agreed future appointments preserves upcoming schedules and blocks double booking', () => {
+  const state = fixture();
+  const agreed = match(state, { id: 'agreed', sport: 'running', hostId: 'sua', recruitmentClosed: true, applications: [{ userId: 'minseo', status: 'accepted' }] });
+  match(state, { id: 'overlapping', startTime: '10:30', endTime: '11:30' });
+  match(state, { id: 'touching', startTime: '11:00', endTime: '12:00' });
+  assert.equal(call('isPastSchedule', agreed, { today: day, now }), false);
+  assert.deepEqual(call('matchingSuggestions', state, 'minseo', { today: day, now }).map((row) => row.match.id), ['touching']);
+  assert.equal(call('isPastSchedule', agreed, { today: agreed.date, now: new Date('2026-10-04T11:00:00+09:00') }), true);
+});
+
+test('injected today selects the Korean calendar day while now supplies only Korean wall time', () => {
+  const state = fixture();
+  const ended = match(state, { id: 'ended', date: day, startTime: '07:00', endTime: '08:00' });
+  const later = match(state, { id: 'later', date: day, startTime: '10:00', endTime: '11:00' });
+  const options = { today: day, now: new Date('2000-01-01T00:00:00Z') };
+  assert.deepEqual(call('matchingSuggestions', state, 'minseo', options).map((row) => row.match.id), ['later']);
+  assert.equal(call('isPastSchedule', ended, options), true);
+  assert.equal(call('isPastSchedule', later, options), false);
+  for (const today of ['2026-02-30', '2026-13-01', '2026-1-03']) {
+    assert.throws(() => call('matchingSuggestions', state, 'minseo', { ...options, today }), RangeError);
+    assert.throws(() => call('isPastSchedule', later, { ...options, today }), RangeError);
+  }
+});

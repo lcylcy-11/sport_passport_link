@@ -276,3 +276,25 @@ input:focus,select:focus,textarea:focus{background:rgba(255,255,255,.92);box-sha
   :is(.glass-section,.panel,.mcard,.today,.row,.gcard,.person,.link-tile,.empty,.stat,.search,.chip-select,.toggle-chip,.filters__more,.note,.code-card,.profile-sport-details,.ranking-policy,.record-summary,.passport-face){background:rgba(248,249,249,.92)}
   .sheet{background:#f4f6f7}
 }
+.passport-manner{margin-top:14px;padding-top:12px;border-top:1px solid rgba(52,73,57,.12)}
+.passport-manner-label{font-size:11px;font-weight:700;color:#607168}
+.passport-manner-summary{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:6px}
+.passport-manner-stars{display:inline-flex;gap:2px;font-size:20px;line-height:1}
+.passport-manner-star{position:relative;display:inline-block;width:1em;height:1em}
+.passport-manner-empty{color:#d1d8d0}
+.passport-manner-fill{position:absolute;top:0;left:0;width:var(--star-fill);overflow:hidden;white-space:nowrap;color:#ad842c}
+.passport-manner-value{font-size:11px;color:#52665e}
+.consensus-card{padding:18px;margin:18px 0;border:1px solid rgba(255,255,255,.85);border-radius:20px;background:rgba(255,255,255,.55);overflow-wrap:anywhere}
+.consensus-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.consensus-heading h3{margin:0;font-size:16px}.consensus-heading>span{font-size:12px;color:var(--muted)}
+.consensus-card ul{list-style:none;padding:0;margin:14px 0}.consensus-card li{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid rgba(100,110,100,.09);font-size:12px}
+.consensus-card li>span:first-child{flex:1}.consensus-card li>b{font-size:11px;font-weight:600;color:#4b6856}
+.consensus-actions{display:flex;gap:8px;flex-wrap:wrap}.consensus-actions .btn{flex:1;min-width:90px}
+.rate-form{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.rate-stars{padding:0;margin:0;border:0;display:flex;gap:2px}
+.rate-choice{position:relative;display:grid;place-items:center;width:28px;height:34px;cursor:pointer}
+.rate-choice input{position:absolute;inset:0;margin:0;opacity:0;cursor:pointer}
+.rate-choice span{display:grid;place-items:center;color:#829183}.rate-choice .icon{width:22px;height:22px}
+.rate-choice:has(input:checked) span{color:#aa7b24}.rate-choice:has(input:checked) .icon{fill:rgba(203,161,57,.28)}
+.rate-choice:has(input:focus-visible){outline:2px solid #547963;outline-offset:2px;border-radius:6px}
+.rate-form .btn{white-space:nowrap}

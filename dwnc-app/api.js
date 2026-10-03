@@ -28,3 +28,13 @@ export async function command(type,payload,revision,expectedUserId) {
     throw error;
   }
 }
+
+/** @param {'add10'|'reset'} action @param {string} expectedUserId */
+export async function demoRecords(action,expectedUserId) {
+  const body = {action,expectedUserId,requestId:crypto.randomUUID()};
+  try { return await request('/api/demo/records',body); }
+  catch (error) {
+    if (error instanceof RequestError && error.status === 0) return request('/api/demo/records',body);
+    throw error;
+  }
+}

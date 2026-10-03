@@ -12,21 +12,24 @@ export function openDatabase(filename) {
 
 export function migrateSports(db) {
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)');
-  if (db.prepare('SELECT version FROM schema_migrations WHERE version=1').get()) return;
+  for (const [version,file] of [[1,'001-sports.sql'],[2,'002-collaboration.sql']]) {
+  if (db.prepare('SELECT version FROM schema_migrations WHERE version=?').get(version)) continue;
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.exec(readFileSync(new URL('./migrations/001-sports.sql', import.meta.url), 'utf8'));
-    db.prepare('INSERT INTO schema_migrations VALUES (1, ?)').run(new Date().toISOString());
+    db.exec(readFileSync(new URL(`./migrations/${file}`, import.meta.url), 'utf8'));
+    db.prepare('INSERT INTO schema_migrations VALUES (?, ?)').run(version,new Date().toISOString());
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
 }
 
 export function readState(db, actorId = '') {
   const rows = (table) => db.prepare(`SELECT payload FROM ${table}`).all().map(row => JSON.parse(row.payload));
   const meta = db.prepare('SELECT revision, next_id FROM app_meta WHERE id=1').get();
   const state = { version: 2, activeUserId: actorId, nextId: Number(meta.next_id), users: rows('profiles'),
-    groups: rows('groups'), matches: rows('matches'), results: rows('results'),
+    groups: rows('groups'), matches: rows('matches'), results: rows('results'), appointmentProposals:rows('appointment_proposals'),resultProposals:rows('result_proposals'),
     friendRequests: rows('friend_requests'), invitations: rows('invitations'), notifications: rows('notifications'), dailyNotes: {}, ratings: [] };
+  state.notifications.sort((a,b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id, 'en', {numeric:true}));
   state.activeUserId ||= state.users[0]?.id || '';
   for (const group of state.groups) group.memberIds = db.prepare('SELECT user_id FROM group_members WHERE group_id=?').all(group.id).map(row => row.user_id);
   for (const match of state.matches) match.applications = db.prepare('SELECT payload FROM applications WHERE match_id=?').all(match.id).map(row => JSON.parse(row.payload));
@@ -60,6 +63,8 @@ export function writeState(db, state) {
     for (const app of applications) upsert('applications', ['match_id','user_id'], ['match_id','user_id','status','payload'], [match.id,app.userId,app.status,json(app)]);
   }
   for (const result of state.results) upsert('results', ['match_id'], ['match_id','recorded_by','payload'], [result.matchId,result.recordedBy,json(result)]);
+  for (const p of state.appointmentProposals || []) upsert('appointment_proposals',['id'],['id','room_id','proposed_by','payload'],[p.id,p.roomId,p.proposedBy,json(p)]);
+  for (const p of state.resultProposals || []) upsert('result_proposals',['id'],['id','match_id','proposed_by','payload'],[p.id,p.matchId,p.proposedBy,json(p)]);
   for (const req of state.friendRequests) upsert('friend_requests', ['id'], ['id','from_id','to_id','payload'], [req.id,req.fromId,req.toId,json(req)]);
   for (const inv of state.invitations) upsert('invitations', ['id'], ['id','match_id','from_id','to_id','payload'], [inv.id,inv.matchId,inv.fromId,inv.toId,json(inv)]);
   for (const notice of state.notifications) upsert('notifications', ['id'], ['id','user_id','payload'], [notice.id,notice.userId,json(notice)]);

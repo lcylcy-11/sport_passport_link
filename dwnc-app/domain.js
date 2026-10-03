@@ -1,3 +1,5 @@
+import { koreaToday, isCalendarDate } from './clock.js';
+
 export const SPORTS = ['tennis', 'futsal', 'running'];
 export const SPORT_LABEL = { tennis: '테니스', futsal: '풋살', running: '러닝' };
 export const LEVELS = ['입문', '초급', '중급', '상급', '무관'];
@@ -10,12 +12,12 @@ const clone = (state) => structuredClone(state);
 const byId = (state, id) => state.users.find((user) => user.id === id);
 const matchById = (state, id) => state.matches.find((match) => match.id === id);
 const acceptedIds = (match) => [match.hostId, ...match.applications.filter((a) => a.status === 'accepted').map((a) => a.userId)];
-const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00`)) && new Date(`${value}T12:00:00`).toISOString().slice(0, 10) === value;
+const validDate = isCalendarDate;
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 const localDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const dayOffset = (base, offset) => { const date = new Date(`${base}T12:00:00`); date.setDate(date.getDate() + offset); return localDay(date); };
 
-export function today() { return localDay(new Date()); }
+export function today() { return koreaToday(); }
 export function getUser(state, id) { return byId(state, id); }
 export function getMatch(state, id) { return matchById(state, id); }
 export function participants(match) { return acceptedIds(match); }

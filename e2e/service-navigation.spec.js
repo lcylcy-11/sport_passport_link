@@ -139,12 +139,16 @@ test('four bottom entries integrate matching schedule and community tabs within 
   await expect(page.locator('.content[data-page="home"]')).toBeVisible();
   await expect(page.locator('.content .passport-flip')).toHaveAttribute('data-flipped', 'true');
   await canonical(page, 'community');
+  await expect(page.locator('[data-action="community-tab"]')).toHaveCount(3);
   await expect(page.locator('[data-community-tab="friends"]')).toBeVisible();
   await page.locator('[data-action="community-tab"][data-id="groups"]').click();
   await expect(page.locator('[data-community-tab="groups"]')).toBeVisible();
   await expect(page.locator('[data-action="community-tab"][data-id="groups"]')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('[data-action="community-tab"][data-id="friends"]').click();
   await expect(page.locator('#friend-form')).toBeVisible();
+  await page.locator('[data-action="community-tab"][data-id="chats"]').click();
+  await expect(page.locator('[data-community-tab="chats"]')).toBeVisible();
+  await expect(page.locator('[data-action="community-tab"][data-id="chats"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.stamp,.celebrate')).toHaveCount(0);
 });
 

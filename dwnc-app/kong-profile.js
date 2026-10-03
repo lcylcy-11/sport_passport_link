@@ -1,4 +1,5 @@
 import { SPORTS } from './domain.js';
+export { koreaToday } from './clock.js';
 
 // Display examples from the approved mockup, rather than permanent product rules.
 export const KONG_PREVIEW_POLICY = Object.freeze({
@@ -11,15 +12,6 @@ export const KONG_PREVIEW_POLICY = Object.freeze({
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const koreanDate = new Intl.DateTimeFormat('en', {
-  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
-});
-
-export function koreaToday(date = new Date()) {
-  const parts = Object.fromEntries(koreanDate.formatToParts(date).map(({ type, value }) => [type, value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 function dateNumber(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return NaN;
   const time = Date.parse(`${value}T00:00:00Z`);

@@ -171,6 +171,9 @@ test('new account opens a public identity, flips to a static baby Kong and keeps
 });
 
 test('actual saved attendance updates both accounts, unified history and persisted character state once', async ({ browser, page }) => {
+  // This journey now includes two real approval sessions and a second refresh;
+  // individual expectations keep their original five-second timeout.
+  test.setTimeout(90000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await signup(page, '콩 기록 모집자', 'kong-host@example.test');
   const hostId = (await snapshot(page)).state.activeUserId;
@@ -191,11 +194,36 @@ test('actual saved attendance updates both accounts, unified history and persist
     await page.locator('#result-form button[type="submit"]').click();
     const response = await responsePromise;
     expect(response.status()).toBe(200);
-    const saved = await response.json();
-    expect(saved.state.results.find(result => result.matchId === created.id).attendedIds.sort()).toEqual([hostId, playerId].sort());
+    const proposed = await response.json();
+    expect(proposed.state.results.filter(result => result.matchId === created.id)).toHaveLength(0);
+    const proposal = proposed.state.resultProposals.find(item => item.matchId === created.id && item.status === 'pending');
+    expect(proposal.participantIds.sort()).toEqual([hostId, playerId].sort());
+    expect(proposal.approvedIds).toEqual([hostId]);
+    await expectProfile(page, 0, null, null);
+    await expect(page.locator('.consensus-card')).toContainText('1/2명 승인');
+    await expect(page.locator('.kong-history [data-action="details"]')).toHaveCount(0);
+    expect(await reactionCount(page)).toBe(0);
+    await other.reload();
+    await route(other, `profile?match=${created.id}`);
+    await expect(other.locator('.consensus-card')).toContainText('1/2명 승인');
+    const approvalResponsePromise = other.waitForResponse(response => response.url().endsWith('/api/commands') && response.request().postDataJSON().type === 'result.decide');
+    await other.getByRole('button', { name: '동의하고 확정', exact: true }).click();
+    const approvalResponse = await approvalResponsePromise;
+    expect(approvalResponse.status()).toBe(200);
+    const confirmed = await approvalResponse.json();
+    expect(confirmed.state.results.find(result => result.matchId === created.id).attendedIds.sort()).toEqual([hostId, playerId].sort());
+    await page.getByRole('button', { name: '닫기', exact: true }).click();
+    // Start observing the brief reward at the refresh boundary, before several
+    // asynchronous profile checks can consume its 1.2-second visible interval.
+    await Promise.all([
+      refresh(page),
+      expect(page.locator('.kong-mascot')).toHaveAttribute('data-kong-motion', 'react'),
+    ]);
     await expectProfile(page, 1, 0, 2);
-    await expect(page.locator('.kong-mascot')).toHaveAttribute('data-kong-motion', 'react');
     await expect(page.locator('.kong-mascot')).toHaveAttribute('data-kong-motion', 'idle');
+    expect(await reactionCount(page)).toBe(1);
+    await refresh(page);
+    await expectProfile(page, 1, 0, 2);
     expect(await reactionCount(page)).toBe(1);
     await expect(page.locator('.kong-sport-items [data-kong-item="tennis"]')).toHaveAttribute('data-level', '1');
     await expect(page.locator('.kong-history .kong-day')).toHaveCount(14);
@@ -409,6 +437,7 @@ test('long names and canonical routes plus aliases stay in the mobile canvas; ed
   await expect(page.locator('.toast:not([hidden])')).toBeVisible();
   await mobileCanvas(page);
   await page.reload();
+  await page.locator('.home-summary-details > summary').click();
   await expect(page.getByText('콩 회귀 검증 소개', { exact: true })).toBeVisible();
   const savedUser = (await snapshot(page)).state.users.find(user => user.id === id);
   expect(savedUser.chosenSports).toEqual(['running']);

@@ -1,6 +1,7 @@
 import { SPORTS, isCompleted, participants } from './domain.js';
 import { canRequestMatch, statsFor } from './extended-domain.js';
-import { deriveKongProfile, koreaToday } from './kong-profile.js';
+import { deriveKongProfile } from './kong-profile.js';
+import { koreaToday, koreaTime, isCalendarDate } from './clock.js';
 
 const round = (value) => Math.round(value * 10) / 10;
 const minutes = (time) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
@@ -51,21 +52,19 @@ export function regionalRanking(state, sport, { region = '', today = koreaToday(
   return rows.sort((left, right) => right.score - left.score || right.recent14 - left.recent14 || right.winRate - left.winRate || left.user.name.localeCompare(right.user.name, 'ko') || left.user.id.localeCompare(right.user.id));
 }
 
-const koreanTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 function requestClock(today, now) {
-  const date = new Date(`${today}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(today) || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== today) throw new RangeError('today must be a valid Korean YYYY-MM-DD date');
-  // Eligibility helpers read local fields. Give them the chosen Korean day and
-  // Korean wall-clock fields independently of the host operating-system zone.
-  return new Date(`${today}T${koreanTime.format(now)}:00`);
+  if (!isCalendarDate(today)) throw new RangeError('today must be a valid Korean YYYY-MM-DD date');
+  // Preserve the injected Korean calendar day while using now's Korean time.
+  return new Date(`${today}T${koreaTime(now)}:00+09:00`);
 }
-const wallTime = (clock) => `${String(clock.getHours()).padStart(2, '0')}:${String(clock.getMinutes()).padStart(2, '0')}`;
-const endedBy = (match, today, time) => !match || match.date < today || match.date === today && match.endTime <= time;
 
 /** A schedule is past at its Korean end-time boundary; status is unaffected. */
 export function isPastSchedule(match, { today = koreaToday(), now = new Date() } = {}) {
-  return endedBy(match, today, wallTime(requestClock(today, now)));
+  requestClock(today, now);
+  return endedBy(match, today, koreaTime(now));
 }
+
+const endedBy = (match, today, time) => !match || match.date < today || match.date === today && match.endTime <= time;
 
 const overlaps = (left, right) => left.date === right.date && left.startTime < right.endTime && right.startTime < left.endTime;
 const gap = (left, right) => Math.min(Math.abs(minutes(left.startTime) - minutes(right.endTime)), Math.abs(minutes(right.startTime) - minutes(left.endTime)));
@@ -82,8 +81,7 @@ export function matchingSuggestions(state, userId, { today = koreaToday(), now =
   if (!user) return [];
   const clock = requestClock(today, now);
   const count = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 4;
-  const time = wallTime(clock);
-  const schedules = state.matches.filter((match) => match.status === 'open' && participants(match).includes(userId) && !isCompleted(state, match.id) && !endedBy(match, today, time));
+  const schedules = state.matches.filter((match) => match.status === 'open' && participants(match).includes(userId) && !isCompleted(state, match.id) && !endedBy(match, today, koreaTime(clock)));
   const rows = [];
   for (const match of state.matches) {
     if (match.region !== user.region || !user.chosenSports.includes(match.sport) || !canRequestMatch(state, match, userId, clock) || schedules.some((schedule) => overlaps(match, schedule))) continue;

@@ -6,6 +6,7 @@ import { deriveKongProfile, koreaToday } from './kong-profile.js';
 import { renderKongCharacter, renderKongHistory } from './kong-profile-view.js';
 import { renderPassportCard } from './passport-view.js';
 import { regionalRanking, matchingSuggestions, isPastSchedule } from './service-model.js';
+import { createChatController } from './chat-view.js';
 
 installIcons();
 const root = document.getElementById('app');
@@ -23,6 +24,7 @@ const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)')
 const pages = ['home', 'matches', 'community', 'ranking', 'notifications'];
 const pageTitle = { community: '커뮤니티', home: '홈', matches: '매칭', activity: '내 운동', people: '친구', groups: '그룹', profile: '프로필', ranking: '랭킹', notifications: '알림' };
 let state, revision = 0, loading = true, loadError = null, authMode = 'login', pending = false, modal = null, flash = null, cardUrl = null, cardRequestId = 0;
+let signupCompletion = null;
 const emptyFilters = () => ({ sport: '', format: '', region: '', venue: '', date: '', time: '', level: '', query: '', openOnly: true, minOpenSeats: '' });
 let filters = emptyFilters();
 const drafts = new Map();
@@ -33,6 +35,43 @@ let rankFilter = { sport: 'tennis', region: '', venue: '', period: 'month', mont
 // Motion bookkeeping: what changed since the last render decides which elements animate.
 let lastPage = null, lastModalKey = null, pulseId = null, pulseFor = null, pulseUntil = 0, toastTimer = null, closing = false;
 let kongReactionTimer = null, kongRewardUserId = null, homeCardFlipped = false, communityTab = 'friends';
+const chat = createChatController({
+  request: api.request, getState: () => state,
+  save: (...args) => save(...args), renderApp: () => render(),
+  refreshState: refreshChatState,
+  openWorkout: id => openModal({ type: 'details', id }),
+  notify: (message, error = false) => showToast(message, Boolean(error)),
+});
+
+function syncCommunityRoute() {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  communityTab = location.hash.startsWith('#/groups') ? 'groups' : params.has('room') ? 'chats' : ['friends','groups','chats'].includes(params.get('tab')) ? params.get('tab') : 'friends';
+  chat.setRoom(params.get('room'));
+}
+function markNewConfirmedRecord(previous, next) {
+  if (!previous || previous.activeUserId !== next.activeUserId) return false;
+  const id = next.activeUserId, before = deriveKongProfile(previous,id,koreaToday()).total;
+  if (deriveKongProfile(next,id,koreaToday()).total <= before) return false;
+  const known = new Set(previous.results.map(result => result.matchId));
+  if (!next.results.some(result => !known.has(result.matchId) && result.attendedIds.includes(id))) return false;
+  kongRewardUserId = id; homeCardFlipped = true;
+  return true;
+}
+async function refreshChatState() {
+  if (!state || pending) return;
+  const source = state.activeUserId;
+  const result = await api.request('/api/state');
+  if (state?.activeUserId !== source) return;
+  if (result.state.activeUserId !== source) {
+    chat.dispose(); modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false;
+    cancelKongReaction(true); homeCardFlipped = false;
+    state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision; render();
+    throw new api.RequestError(409,'다른 계정으로 변경되었습니다.','SESSION_CHANGED');
+  }
+  if (pending || result.revision < revision) return;
+  markNewConfirmedRecord(state,result.state);
+  state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision;
+}
 
 function cancelKongReaction(forgetReward = false) {
   clearTimeout(kongReactionTimer);
@@ -61,46 +100,92 @@ function animateKong() {
 }
 
 async function loadState() {
+  const previous = state;
   cancelKongReaction(true);
   const ownsLock = !pending;
   if (ownsLock) { pending = true; root.inert = true; root.setAttribute('aria-busy','true'); }
   try {
     const result = await api.request('/api/state');
-    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; homeCardFlipped = false; }
-    state = result.state; revision = result.revision; loadError = null;
+    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false; homeCardFlipped = false; }
+    const newRecord = markNewConfirmedRecord(previous,result.state);
+    state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision; loadError = null;
+    if (signupCompletion && signupCompletion.ownerId !== state.activeUserId) signupCompletion = null;
+    if (newRecord) {
+      modal = null; modalStack.length = 0;
+      if (location.hash !== '#/home') history.replaceState(null,'','#/home');
+    }
     if (modal?.id && ['details','result'].includes(modal.type) && !match(modal.id)) modal = null;
   } catch (error) {
-    if (error.status === 401) { state = null; modal = null; drafts.clear(); authMode = 'login'; }
+    if (error.status === 401) { state = null; modal = null; drafts.clear(); signupCompletion = null; authMode = 'login'; }
     else loadError = error.message;
   } finally { loading = false; render(); if (ownsLock) { pending = false; root.inert = false; root.removeAttribute('aria-busy'); } }
 }
 
-async function save(type, payload, message, icon = 'check') {
+async function save(type, payload, message, icon = 'check', { closeModalOnSuccess = false } = {}) {
   if (pending) return;
   const sourceUserId = state.activeUserId;
-  const beforeTotal = type === 'result.save' ? deriveKongProfile(state, sourceUserId, koreaToday()).total : null;
+  const previous = state;
   const submittedDraftKey = submittedForm ? draftKey(submittedForm) : null;
   pending = true; root.inert = true; root.setAttribute('aria-busy','true');
   showToast('저장 중…',false,'clock');
   try {
     const result = await api.command(type,payload,revision,state.activeUserId);
-    state = result.state; revision = result.revision;
-    if (type === 'result.save' && state.activeUserId === sourceUserId && deriveKongProfile(state, sourceUserId, koreaToday()).total > beforeTotal) { kongRewardUserId = sourceUserId; homeCardFlipped = true; }
+    const newRecord = markNewConfirmedRecord(previous,result.state);
+    state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision;
+    const reward = newRecord && type.startsWith('result.') && state.activeUserId === sourceUserId;
+    if (reward) { modal = null; modalStack.length = 0; }
     if (result.id) pulseId = result.id;
+    if (type === 'profile.update' && signupCompletion?.ownerId === sourceUserId) signupCompletion = null;
+    if (closeModalOnSuccess) modal = null;
     if (submittedDraftKey) drafts.delete(submittedDraftKey);
     if (!modal) modalStack.length = 0;
-    flash = message ? { text: message, error: false, icon } : null;
-    render(); return result;
+    flash = message ? { text: reward ? '운동 기록 확정 · 콩이 자랐어요' : message, error: false, icon } : null;
+    if (reward && location.hash !== '#/home') location.hash = '#/home';
+    else render();
+    return result;
   } catch (error) {
-    if (error.status === 401) { cancelKongReaction(true); state = null; modal = null; drafts.clear(); authMode = 'login'; render(); }
+    if (error.status === 401) { cancelKongReaction(true); state = null; modal = null; drafts.clear(); signupCompletion = null; authMode = 'login'; render(); }
     else if (['REVISION_CONFLICT','SESSION_CHANGED'].includes(error.code)) await loadState();
     throw error;
   } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }
 }
 
+async function completeSignupProfile() {
+  const setup = signupCompletion;
+  if (!setup || setup.ownerId !== state?.activeUserId) return;
+  const me = user(setup.ownerId);
+  await save('profile.update', { name: me.name, region: setup.region, ageRange: setup.ageRange, gender: me.gender, bio: me.bio, avatar: me.avatar, chosenSports: setup.chosenSports, sports: me.sports }, '가입 완료');
+}
+
+async function saveDemoRecords(action) {
+  if (pending || !state?.demoControls) return;
+  const sourceUserId = state.activeUserId;
+  const previous = state;
+  pending = true; root.inert = true; root.setAttribute('aria-busy','true');
+  showToast('시연 기록 적용 중…',false,'clock');
+  try {
+    const result = await api.demoRecords(action,sourceUserId);
+    markNewConfirmedRecord(previous,result.state);
+    state = {...result.state,demoControls:result.demoControls === true};
+    revision = result.revision;
+    modal = null; modalStack.length = 0;
+    flash = {text:action === 'add10' ? '시연 운동 10회 추가 · 콩과 통계 업데이트' : '추가한 시연 기록 초기화',error:false,icon:'check'};
+    if (location.hash !== '#/home') history.replaceState(null,'','#/home');
+    render();
+  } catch (error) {
+    if (error.status === 401 || ['REVISION_CONFLICT','SESSION_CHANGED'].includes(error.code)) await loadState();
+    throw error;
+  } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }
+}
+function signupRecovery() {
+  if (!signupCompletion || signupCompletion.ownerId !== state?.activeUserId) return '';
+  const setup = signupCompletion;
+  return `<div class="banner bad signup-recovery" role="status"><span>계정은 만들어졌어요. 활동 정보를 다시 저장해 주세요.<br>${esc(setup.region)} · ${esc(setup.ageRange)} · ${setup.chosenSports.map(sport => esc(old.SPORT_LABEL[sport])).join(' · ')}</span><button type="button" class="btn small" data-action="retry-signup-profile">가입 정보 다시 저장</button></div>`;
+}
+
 function authPage() {
   const signup = authMode === 'signup';
-  return `<main class="auth-screen"><a class="brand" href="#/home">DWNC<span>✳</span></a><section class="panel auth-panel"><h1>${signup ? '같이 운동해요' : '다시, 같이 움직여요'}</h1><p>${signup ? '여러 운동, 하나의 프로필' : '내 기록과 운동 친구를 만나세요'}</p><form id="auth-form" class="form">${signup ? '<label>닉네임<input name="name" required maxlength="24" autocomplete="nickname"></label><div class="grid2"><label>활동 지역<input name="region" required maxlength="30" placeholder="관악구"></label><label>연령대<select name="ageRange"><option>20대</option><option>30대</option><option>40대</option><option>50대 이상</option><option>미입력</option></select></label></div><fieldset class="pick"><legend>즐기는 운동</legend>' + old.SPORTS.map(sport => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" checked>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('') + '</fieldset>' : ''}<label>이메일<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>비밀번호<input name="password" type="password" required minlength="10" maxlength="128" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="10자 이상"></label>${signup ? '<label>비밀번호 확인<input name="confirmPassword" type="password" required minlength="10" maxlength="128" autocomplete="new-password"></label>' : ''}<button class="btn primary wide" type="submit">${signup ? '회원가입' : '로그인'}</button></form><button class="text-btn" data-action="auth-mode" data-id="${signup ? 'login' : 'signup'}">${signup ? '이미 계정이 있어요 · 로그인' : '처음이에요 · 회원가입'}</button></section></main>`;
+  return `<main class="auth-screen"><a class="brand" href="#/home"><img src="./favicon.svg" alt="" width="28" height="28">beanifit</a><section class="panel auth-panel"><h1>${signup ? '같이 운동해요' : '다시, 같이 움직여요'}</h1><p>${signup ? '여러 운동, 하나의 프로필' : '내 기록과 운동 친구를 만나세요'}</p><form id="auth-form" class="form">${signup ? '<label>닉네임<input name="name" required maxlength="24" autocomplete="nickname"></label><div class="grid2"><label>활동 지역<input name="region" required maxlength="30" placeholder="관악구"></label><label>연령대<select name="ageRange"><option>20대</option><option>30대</option><option>40대</option><option>50대 이상</option><option>미입력</option></select></label></div><fieldset class="pick"><legend>즐기는 운동</legend>' + old.SPORTS.map(sport => `<label class="pick-chip s-${sport}"><input type="checkbox" name="chosenSports" value="${sport}" checked>${ic(sport)}${old.SPORT_LABEL[sport]}</label>`).join('') + '</fieldset>' : ''}<label>이메일<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>비밀번호<input name="password" type="password" required minlength="10" maxlength="128" autocomplete="${signup ? 'new-password' : 'current-password'}" placeholder="10자 이상"></label>${signup ? '<label>비밀번호 확인<input name="confirmPassword" type="password" required minlength="10" maxlength="128" autocomplete="new-password"></label>' : ''}<button class="btn primary wide" type="submit">${signup ? '회원가입' : '로그인'}</button></form><button class="text-btn" data-action="auth-mode" data-id="${signup ? 'login' : 'signup'}">${signup ? '이미 계정이 있어요 · 로그인' : '처음이에요 · 회원가입'}</button></section></main>`;
 }
 function showToast(text, error = false, icon = error ? 'alert' : 'check') {
   const node = toastNode;
@@ -116,7 +201,7 @@ function feedback(message) { showToast(message, true); }
 function draftKey(form) { return `${state.activeUserId}:${form.id}:${form.dataset.id || ''}:${form.id === 'note-form' ? today() : ''}`; }
 function rememberDraft(event) {
   const form = event.target.closest('form');
-  if (!form || !['note-form', 'profile-form', 'create-form', 'result-form', 'group-form'].includes(form.id) || event.target.type === 'file') return;
+  if (!form || (!['note-form', 'profile-form', 'create-form', 'result-form', 'group-form'].includes(form.id) && !form.classList.contains('rate-form')) || event.target.type === 'file') return;
   drafts.set(draftKey(form), [...form.elements].filter(el => el.name && el.type !== 'file').map(el => ({ name: el.name, value: el.value, checked: el.checked, type: el.type })));
 }
 function restoreDrafts() {
@@ -192,6 +277,7 @@ const pill = (cls, icon, text) => `<span class="pill ${cls}">${icon ? ic(icon) :
 function badge(item) {
   if (item.status === 'cancelled') return pill('bad', 'x', '취소');
   if (isDone(item)) return pill('done', 'check', '완료');
+  if (state.resultProposals?.some(proposal => proposal.matchId === item.id && proposal.status === 'pending')) return pill('wait','clock','기록 확인 대기');
   if (d.recruitmentClosed(item)) return pill('mute', 'lock', '마감');
   const status = myStatus(item);
   if (status === 'host') return pill('mine', 'flag', '내 자리');
@@ -225,7 +311,7 @@ function fitChips(item, limit = 3) {
   return chips.length ? `<div class="fits">${chips.map((chip) => `<span class="fit ${chip.kind}">${ic(fitIcon[chip.kind])}${esc(chip.text.replace('모집자 매너 ', ''))}</span>`).join('')}</div>` : '';
 }
 function matchCard(item) {
-  return `<button type="button" class="mcard ${item.sport}" data-action="details" data-id="${esc(item.id)}"><span class="mcard__top">${sportIcon(item.sport)}<span class="mcard__kind">${d.FORMAT_LABEL[item.format]}</span>${item.visibility !== 'public' ? `<span class="mcard__vis" title="${d.VISIBILITY_LABEL[item.visibility]}">${ic(item.visibility === 'group' ? 'flag' : 'users')}</span>` : ''}${badge(item)}</span><strong class="mcard__title">${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${esc(item.startTime)}</span><span class="meta">${ic('pin')}${esc(item.venue)}</span>${fitChips(item)}<span class="mcard__foot">${seatDots(item)}<span class="level">${esc(item.level)}</span>${ic('right', 'chev')}</span></button>`;
+  return `<button type="button" class="mcard ${item.sport}" data-action="details" data-id="${esc(item.id)}"><span class="mcard__top">${sportIcon(item.sport)}<span class="mcard__kind">${d.FORMAT_LABEL[item.format]}</span>${item.visibility !== 'public' ? `<span class="mcard__vis" title="${item.participantOnly ? '참가자만' : d.VISIBILITY_LABEL[item.visibility]}">${ic(item.visibility === 'group' ? 'flag' : 'users')}</span>` : ''}${badge(item)}</span><strong class="mcard__title">${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${esc(item.startTime)}</span><span class="meta">${ic('pin')}${esc(item.venue)}</span>${fitChips(item)}<span class="mcard__foot">${seatDots(item)}<span class="level">${esc(item.level)}</span>${ic('right', 'chev')}</span></button>`;
 }
 function emptyState(icon, text, actions = '') { return `<div class="empty">${ic(icon)}<p>${text}</p>${actions}</div>`; }
 
@@ -291,8 +377,21 @@ function rankingPage(me) {
 }
 
 function communityPage(me) {
-  const content = communityTab === 'groups' ? groupsPage(me).replace('<h1>그룹</h1>','<h2>그룹</h2>') : peoplePage(me).replace('<h1>친구</h1>','<h2>친구</h2>');
-  return `<div class="head"><h1>커뮤니티</h1></div><p class="hint">함께 움직이는 친구와 그룹을 만나요.</p><div class="seg community-tabs" role="group" aria-label="커뮤니티">${[['friends','친구','users'],['groups','그룹','flag']].map(([value,label,icon])=>`<button type="button" data-action="community-tab" data-id="${value}" aria-pressed="${communityTab===value}">${ic(icon)}${label}</button>`).join('')}</div><section class="community-content" data-community-tab="${communityTab}">${content}</section>`;
+  const content = communityTab === 'chats' ? chat.render() : communityTab === 'groups' ? groupsPage(me).replace('<h1>그룹</h1>','<h2>그룹</h2>') : peoplePage(me).replace('<h1>친구</h1>','<h2>친구</h2>');
+  return `<div class="head"><h1>커뮤니티</h1></div><p class="hint">친구와 대화하고 함께할 운동을 정해요.</p><div class="seg community-tabs" role="group" aria-label="커뮤니티">${[['friends','친구','users'],['groups','그룹','flag'],['chats','채팅','send']].map(([value,label,icon])=>`<button type="button" data-action="community-tab" data-id="${value}" aria-pressed="${communityTab===value}">${ic(icon)}${label}</button>`).join('')}</div><section class="community-content" data-community-tab="${communityTab}">${content}</section>`;
+}
+
+function pendingResultBlock(item, me) {
+  const proposal = state.resultProposals?.find(entry => entry.matchId === item.id && entry.status === 'pending');
+  if (!proposal) return '';
+  const data = proposal.data, approved = proposal.approvedIds.includes(me.id);
+  const summary = item.sport === 'tennis' ? data.noContest ? '경기 미성립' : `A ${data.scoreA} : B ${data.scoreB}` : item.sport === 'futsal' ? `우리 ${data.scoreFor} : 상대 ${data.scoreAgainst}` : '러닝 거리·페이스';
+  const details = proposal.participantIds.map(id => {
+    const entry = data.entries?.[id];
+    const text = !data.attendedIds.includes(id) ? '불참으로 제안' : entry ? `${entry.distanceKm}km · ${paceText(Number(entry.paceSec))}` : item.sport === 'tennis' ? data.noContest ? '참석 · 경기 미성립' : `${data.teamAIds?.includes(id) ? 'A' : 'B'}팀 · 참석` : `${data.positions?.[id] || '참석'}${data.mvpUserId === id ? ' · MVP' : ''}`;
+    return `<li><span>${esc(name(id))}</span><span>${esc(text)}${data.reviews?.[id] ? `<small>${esc(data.reviews[id])}</small>` : ''}</span><b>${proposal.approvedIds.includes(id) ? '동의' : '확인 대기'}</b></li>`;
+  }).join('');
+  return `<section class="consensus-card" data-result-proposal="${esc(proposal.id)}"><div class="consensus-heading"><h3>기록 확인</h3><span>${proposal.approvedIds.length}/${proposal.participantIds.length}명 승인</span></div><p>${esc(name(proposal.proposedBy))}님의 제안 · ${esc(summary)}</p><ul>${details}</ul><p class="hint">참석 여부와 결과를 모두 확인한 뒤 동의해 주세요. 전원이 승인하면 기록으로 확정돼요.</p>${proposal.participantIds.includes(me.id) ? `<div class="consensus-actions">${approved ? '<span class="pill done">내 승인 완료</span>' : `<button type="button" class="btn primary" data-action="result-decide" data-id="${esc(proposal.id)}" data-version="${proposal.version}" data-decision="accepted">동의하고 확정</button>`}<button type="button" class="btn soft" data-action="result-decide" data-id="${esc(proposal.id)}" data-version="${proposal.version}" data-decision="rejected">거절</button><button type="button" class="btn ghost" data-action="result" data-id="${esc(item.id)}">수정 제안</button></div>` : ''}</section>`;
 }
 
 function peoplePage(me) {
@@ -302,7 +401,7 @@ function peoplePage(me) {
   const invites = state.invitations.filter((invite) => invite.toId === me.id && invite.status === 'pending');
   const personRow = (id, end) => `<div class="row static">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong><span class="meta">${ic('pin')}${esc(user(id).region)} ${ic('star')}${d.mannerFor(state, id).toFixed(1)}</span></span><span class="row__end">${end}</span></div>`;
   const decide = (action, id, yes, no) => `<button class="icon-btn solid ok" data-action="${action}" data-id="${esc(id)}" data-decision="${yes}" aria-label="수락">${ic('check')}</button><button class="icon-btn" data-action="${action}" data-id="${esc(id)}" data-decision="${no}" aria-label="거절">${ic('x')}</button>`;
-  return `<div class="head"><h1>친구</h1></div><div class="code-card"><span class="code-card__label">No.</span><strong>${esc(me.friendCode)}</strong><button class="icon-btn" data-action="copy-code" data-id="${esc(me.friendCode)}" aria-label="친구 코드 복사">${ic('copy')}</button></div><form id="friend-form" class="send-row"><label class="search">${ic('userplus')}<span class="sr">친구 코드</span><input name="code" required placeholder="DWNC-0002" autocomplete="off"></label><button class="icon-btn solid" type="submit" aria-label="친구 신청 보내기">${ic('send')}</button></form>${incoming.length ? `<section class="block"><h2 class="sub">${ic('bell')}받은 신청</h2><div class="rows">${incoming.map((request) => personRow(request.fromId, decide('friend-decide', request.id, 'accepted', 'rejected'))).join('')}</div></section>` : ''}${invites.length ? `<section class="block"><h2 class="sub">${ic('send')}운동 초대</h2><div class="rows">${invites.map((invite) => { const item = match(invite.matchId); return `<div class="row static">${sportIcon(item.sport)}<span class="row__body"><strong>${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${ic('user')}${esc(name(invite.fromId))}</span></span><span class="row__end">${decide('invite-decide', invite.id, 'accepted', 'declined')}</span></div>`; }).join('')}</div></section>` : ''}<section class="block"><h2 class="sub">${ic('users')}내 친구 <b>${friends.length}</b>${outgoing.length ? pill('wait', 'clock', `${outgoing.length}`) : ''}</h2>${friends.length ? `<div class="rows">${friends.map((id) => `<button type="button" class="row" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong><span class="meta">${ic('pin')}${esc(user(id).region)} ${ic('star')}${d.mannerFor(state, id).toFixed(1)}</span></span>${ic('right', 'chev')}</button>`).join('')}</div>` : emptyState('users', '코드로 첫 친구를 추가해 보세요')}</section><section class="block"><h2 class="sub">${ic('globe')}둘러보기</h2><div class="people">${state.users.filter((person) => person.id !== me.id).map((person) => `<button class="person" type="button" data-action="view-profile" data-id="${esc(person.id)}">${avatar(person.id, 'lg')}<strong>${esc(person.name)}</strong><span class="person__sports">${person.chosenSports.map((sport) => sportIcon(sport, 'xs')).join('')}</span></button>`).join('')}</div></section>`;
+  return `<div class="head"><h1>친구</h1></div><div class="code-card"><span class="code-card__label">No.</span><strong>${esc(me.friendCode)}</strong><button class="icon-btn" data-action="copy-code" data-id="${esc(me.friendCode)}" aria-label="친구 코드 복사">${ic('copy')}</button></div><form id="friend-form" class="send-row"><label class="search">${ic('userplus')}<span class="sr">친구 코드</span><input name="code" required placeholder="친구 코드 입력" autocomplete="off"></label><button class="icon-btn solid" type="submit" aria-label="친구 신청 보내기">${ic('send')}</button></form>${incoming.length ? `<section class="block"><h2 class="sub">${ic('bell')}받은 신청</h2><div class="rows">${incoming.map((request) => personRow(request.fromId, decide('friend-decide', request.id, 'accepted', 'rejected'))).join('')}</div></section>` : ''}${invites.length ? `<section class="block"><h2 class="sub">${ic('send')}운동 초대</h2><div class="rows">${invites.map((invite) => { const item = match(invite.matchId); return `<div class="row static">${sportIcon(item.sport)}<span class="row__body"><strong>${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${ic('user')}${esc(name(invite.fromId))}</span></span><span class="row__end">${decide('invite-decide', invite.id, 'accepted', 'declined')}</span></div>`; }).join('')}</div></section>` : ''}<section class="block"><h2 class="sub">${ic('users')}내 친구 <b>${friends.length}</b>${outgoing.length ? pill('wait', 'clock', `${outgoing.length}`) : ''}</h2>${friends.length ? `<div class="rows">${friends.map((id) => `<button type="button" class="row" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong><span class="meta">${ic('pin')}${esc(user(id).region)} ${ic('star')}${d.mannerFor(state, id).toFixed(1)}</span></span>${ic('right', 'chev')}</button>`).join('')}</div>` : emptyState('users', '코드로 첫 친구를 추가해 보세요')}</section><section class="block"><h2 class="sub">${ic('globe')}둘러보기</h2><div class="people">${state.users.filter((person) => person.id !== me.id).map((person) => `<button class="person" type="button" data-action="view-profile" data-id="${esc(person.id)}">${avatar(person.id, 'lg')}<strong>${esc(person.name)}</strong><span class="person__sports">${person.chosenSports.map((sport) => sportIcon(sport, 'xs')).join('')}</span></button>`).join('')}</div></section>`;
 }
 
 function groupsPage(me) {
@@ -339,7 +438,7 @@ function groupDetailModal(item, me) {
   const schedule = member ? state.matches.filter((entry) => entry.groupId === item.id).sort((a, b) => a.date.localeCompare(b.date)) : [];
   const summary = d.groupSummary(state, item.id);
   const stat = (icon, value, label) => `<div class="stat">${ic(icon)}<strong>${value}</strong><small>${label}</small></div>`;
-  const body = `<div class="info"><span>${ic('pin')}${esc(item.region)}</span><span>${ic('flag')}${esc(name(item.ownerId))}</span></div>${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}<div class="people compact">${item.memberIds.map((id) => `<button class="person" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<strong>${esc(name(id))}</strong></button>`).join('')}</div>${member ? `<div class="stats">${stat('check', summary.games, '완료')}${stat('futsal', `${summary.futsalWinRate}%`, `풋살 ${summary.futsalGames}경기`)}${stat('tennis', summary.tennisInternalGames, '테니스')}</div>${schedule.length ? `<div class="rows">${schedule.map((entry) => `<button type="button" class="row" data-action="details" data-id="${esc(entry.id)}">${sportIcon(entry.sport)}<span class="row__body"><strong>${esc(entry.title)}</strong><span class="meta">${ic('calendar')}${shortDate(entry.date)} ${esc(entry.startTime)}</span></span><span class="row__end">${badge(entry)}</span></button>`).join('')}</div>` : ''}<div class="mini-ranks">${old.SPORTS.map((sport) => { const leaders = d.ranking(state, sport, { groupId: item.id }); return leaders.length ? `<div>${sportIcon(sport, 'xs')}${leaders.slice(0, 3).map((row, index) => `<span><b>${index + 1}</b>${esc(row.user.name)}</span>`).join('')}</div>` : ''; }).join('')}</div><div class="sheet__actions"><button class="btn primary wide" data-action="create-group-match" data-id="${esc(item.id)}">${ic('plus')}그룹 운동 만들기</button></div>` : `<div class="sheet__actions"><button class="btn primary wide" data-action="join-group" data-id="${esc(item.id)}">${ic('plus')}가입</button></div>`}`;
+  const body = `<div class="info"><span>${ic('pin')}${esc(item.region)}</span><span>${ic('flag')}${esc(name(item.ownerId))}</span></div>${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}<div class="people compact">${item.memberIds.map((id) => `<button class="person" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<strong>${esc(name(id))}</strong></button>`).join('')}</div>${member ? `<div class="stats">${stat('check', summary.games, '완료')}${stat('futsal', `${summary.futsalWinRate}%`, `풋살 ${summary.futsalGames}경기`)}${stat('tennis', summary.tennisInternalGames, '테니스')}</div>${schedule.length ? `<div class="rows">${schedule.map((entry) => `<button type="button" class="row" data-action="details" data-id="${esc(entry.id)}">${sportIcon(entry.sport)}<span class="row__body"><strong>${esc(entry.title)}</strong><span class="meta">${ic('calendar')}${shortDate(entry.date)} ${esc(entry.startTime)}</span></span><span class="row__end">${badge(entry)}</span></button>`).join('')}</div>` : ''}<div class="mini-ranks">${old.SPORTS.map((sport) => { const leaders = d.ranking(state, sport, { groupId: item.id }); return leaders.length ? `<div>${sportIcon(sport, 'xs')}${leaders.slice(0, 3).map((row, index) => `<span><b>${index + 1}</b>${esc(row.user.name)}</span>`).join('')}</div>` : ''; }).join('')}</div><div class="sheet__actions"><button type="button" class="btn soft wide" data-action="open-chat" data-kind="group" data-id="${esc(item.id)}">${ic('send')}그룹 채팅</button><button class="btn primary wide" data-action="create-group-match" data-id="${esc(item.id)}">${ic('plus')}그룹 운동 만들기</button></div>` : `<div class="sheet__actions"><button class="btn primary wide" data-action="join-group" data-id="${esc(item.id)}">${ic('plus')}가입</button></div>`}`;
   return sheet(item.name, body, { wide: true, icon: ic('flag') });
 }
 
@@ -353,22 +452,23 @@ function detailModal(item, me) {
   const rated = state.ratings.filter((rating) => rating.matchId === item.id && rating.fromId === me.id).map((rating) => rating.toId);
   const pending = item.applications.filter((a) => a.status === 'pending').length;
   const applicantRows = item.hostId === me.id && item.applications.length ? `<div class="block"><h3 class="sub">${ic('userplus')}신청 ${pending ? `<b>${pending}</b>` : ''}</h3><div class="rows">${item.applications.map((application) => { const together = d.playedTogether(state, me.id, application.userId); return `<div class="row static ${pulseId === `${item.id}:${application.userId}` ? 'pulse' : ''}"><button class="row__person" data-action="view-profile" data-id="${esc(application.userId)}">${avatar(application.userId)}<span class="row__body"><strong>${esc(name(application.userId))}</strong><span class="meta">${ic('target')}${esc(user(application.userId).sports[item.sport].level)} ${ic('star')}${d.mannerFor(state, application.userId).toFixed(1)}${together ? ` ${ic('users')}${together}` : ''}</span></span></button><span class="row__end">${application.status === 'pending' && item.status === 'open' && !result ? `<button ${d.recruitmentClosed(item) ? 'disabled' : ''} class="icon-btn solid ok" data-action="decide" data-id="${esc(item.id)}" data-user="${esc(application.userId)}" data-decision="accepted" aria-label="${esc(name(application.userId))} 수락">${ic('check')}</button><button class="icon-btn" data-action="decide" data-id="${esc(item.id)}" data-user="${esc(application.userId)}" data-decision="rejected" aria-label="${esc(name(application.userId))} 거절">${ic('x')}</button>` : application.closedReason ? pill('mute', 'lock', '종료') : application.status === 'accepted' ? pill('done', 'check', '확정') : pill('bad', 'x', '거절')}</span></div>`; }).join('')}</div></div>` : '';
-  const ratingBlock = canRate ? `<div class="block"><h3 class="sub">${ic('star')}매너</h3><div class="rows">${result.attendedIds.filter((id) => id !== me.id).map((id) => `<div class="row static">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong></span><span class="row__end">${rated.includes(id) ? pill('done', 'check', '완료') : `<form class="rate-form stars" data-match="${esc(item.id)}" data-target="${esc(id)}">${[1, 2, 3, 4, 5].map((value) => `<button type="submit" name="value" value="${value}" aria-label="${value}점">${ic('star')}</button>`).join('')}</form>`}</span></div>`).join('')}</div></div>` : '';
+  const ratingBlock = canRate ? `<div class="block"><h3 class="sub">${ic('star')}매너</h3><div class="rows">${result.attendedIds.filter((id) => id !== me.id).map((id) => `<div class="row static">${avatar(id)}<span class="row__body"><strong>${esc(name(id))}</strong></span><span class="row__end">${rated.includes(id) ? pill('done', 'star', `${state.ratings.find(rating => rating.matchId === item.id && rating.fromId === me.id && rating.toId === id).value}/5 · 평가 완료`) : `<form id="rate-${esc(item.id)}-${esc(id)}" class="rate-form" data-match="${esc(item.id)}" data-target="${esc(id)}"><fieldset class="rate-stars"><legend class="sr">${esc(name(id))} 매너 점수</legend>${[1,2,3,4,5].map(value=>`<label class="rate-choice"><input type="radio" name="value" value="${value}" required aria-label="${value}점"><span>${ic('star')}</span></label>`).join('')}</fieldset><button type="submit" class="btn soft sm">평가 남기기</button></form>`}</span></div>`).join('')}</div></div>` : '';
   const resultBlock = result ? `<div class="result-box">${ic('check')}<strong>${esc(resultSummary(result, item, me.id))}</strong>${result.attendedIds.length < old.participants(item).length ? `<small>${ic('users')}${result.attendedIds.length}/${old.participants(item).length}</small>` : ''}</div><ul class="breakdown">${old.participants(item).map((id) => { let detail = '불참'; if (result.attendedIds.includes(id)) { if (item.sport === 'tennis') { const team = result.noContest ? -1 : result.teams.findIndex((members) => members.includes(id)); detail = result.noContest ? '미성립' : `${team === 0 ? 'A' : 'B'} · ${team === result.winnerTeam ? '승' : '패'}`; } else if (item.sport === 'futsal') detail = `${result.positions?.[id] || '—'}${result.mvpUserId === id ? ' · MVP' : ''}`; else { const entry = result.entries[id]; detail = `${entry.distanceKm}km · ${paceText(entry.paceSec)}`; } } return `<li class="${result.attendedIds.includes(id) ? '' : 'absent'}">${avatar(id, 'xs')}<span>${esc(name(id))}</span><b>${esc(detail)}</b>${item.sport === 'running' && result.reviews?.[id] ? `<small>“${esc(result.reviews[id])}”</small>` : ''}</li>`; }).join('')}</ul>` : '';
-  const actions = [canApply ? `<button class="btn primary wide" data-action="apply" data-id="${esc(item.id)}">${ic('send')}참여 신청</button>` : '', canRecord ? `<button class="btn primary wide" data-action="result" data-id="${esc(item.id)}">${ic('check')}결과 기록</button>` : '', canWithdraw ? `<button class="btn ghost" data-action="withdraw" data-id="${esc(item.id)}" aria-label="신청·참가 철회">${ic('undo')}철회</button>` : '', item.hostId === me.id && item.status === 'open' && !result ? `<button class="btn ghost danger" data-action="cancel-match" data-id="${esc(item.id)}" aria-label="자리 취소">${ic('trash')}취소</button>` : ''].filter(Boolean).join('');
-  const body = `<div class="detail-top ${item.sport}">${sportIcon(item.sport, 'lg')}<span class="detail-top__kind">${old.SPORT_LABEL[item.sport]} · ${d.FORMAT_LABEL[item.format]}</span>${badge(item)}</div>${fitChips(item)}<div class="info"><span>${ic('calendar')}${dateText(item.date)} ${esc(item.startTime)}–${esc(item.endTime)}</span><span>${ic('pin')}${esc(item.venue)} · ${esc(item.region)}</span><span>${ic('target')}${esc(item.level)} ${seatDots(item)}</span>${item.visibility !== 'public' ? `<span>${ic(item.visibility === 'group' ? 'flag' : 'users')}${item.groupId ? esc(group(item.groupId)?.name) : d.VISIBILITY_LABEL[item.visibility]}</span>` : ''}</div><button class="host" data-action="view-profile" data-id="${esc(item.hostId)}">${avatar(item.hostId)}<span class="host__who"><strong>${esc(name(item.hostId))}</strong><small>${ic('star')}${d.mannerFor(state, item.hostId).toFixed(1)}</small></span>${pill('mine', 'flag', '모집')}${ic('right', 'chev')}</button>${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}<div class="block"><h3 class="sub">${ic('users')}참가 <b>${old.participants(item).length}/${item.capacity}</b></h3><div class="people compact">${old.participants(item).map((id) => `<button class="person" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<strong>${esc(name(id))}</strong></button>`).join('')}</div></div>${applicantRows}${resultBlock}${ratingBlock}${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`;
+  const actions = [old.participants(item).includes(me.id) ? `<button type="button" class="btn soft wide" data-action="open-chat" data-kind="match" data-id="${esc(item.id)}">${ic('send')}매칭 채팅</button>` : '', canApply ? `<button class="btn primary wide" data-action="apply" data-id="${esc(item.id)}">${ic('send')}참여 신청</button>` : '', canRecord ? `<button class="btn primary wide" data-action="result" data-id="${esc(item.id)}">${ic('check')}결과 기록</button>` : '', canWithdraw ? `<button class="btn ghost" data-action="withdraw" data-id="${esc(item.id)}" aria-label="신청·참가 철회">${ic('undo')}철회</button>` : '', item.hostId === me.id && item.status === 'open' && !result ? `<button class="btn ghost danger" data-action="cancel-match" data-id="${esc(item.id)}" aria-label="자리 취소">${ic('trash')}취소</button>` : ''].filter(Boolean).join('');
+  const body = `<div class="detail-top ${item.sport}">${sportIcon(item.sport, 'lg')}<span class="detail-top__kind">${old.SPORT_LABEL[item.sport]} · ${d.FORMAT_LABEL[item.format]}</span>${badge(item)}</div>${fitChips(item)}<div class="info"><span>${ic('calendar')}${dateText(item.date)} ${esc(item.startTime)}–${esc(item.endTime)}</span><span>${ic('pin')}${esc(item.venue)} · ${esc(item.region)}</span><span>${ic('target')}${esc(item.level)} ${seatDots(item)}</span>${item.visibility !== 'public' ? `<span>${ic(item.visibility === 'group' ? 'flag' : 'users')}${item.participantOnly ? '참가자만' : item.groupId ? esc(group(item.groupId)?.name) : d.VISIBILITY_LABEL[item.visibility]}</span>` : ''}</div><button class="host" data-action="view-profile" data-id="${esc(item.hostId)}">${avatar(item.hostId)}<span class="host__who"><strong>${esc(name(item.hostId))}</strong><small>${ic('star')}${d.mannerFor(state, item.hostId).toFixed(1)}</small></span>${pill('mine', 'flag', '모집')}${ic('right', 'chev')}</button>${item.description ? `<p class="desc">${esc(item.description)}</p>` : ''}<div class="block"><h3 class="sub">${ic('users')}참가 <b>${old.participants(item).length}/${item.capacity}</b></h3><div class="people compact">${old.participants(item).map((id) => `<button class="person" data-action="view-profile" data-id="${esc(id)}">${avatar(id)}<strong>${esc(name(id))}</strong></button>`).join('')}</div></div>${applicantRows}${resultBlock}${pendingResultBlock(item,me)}${ratingBlock}${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`;
   return sheet(item.title, body, { wide: true, tone: item.sport });
 }
 
 function resultModal(item) {
   const people = old.participants(item);
-  const attendance = `<fieldset class="pick"><legend>${ic('users')}참석</legend>${people.map((id) => `<label class="pick-chip person-chip"><input type="checkbox" name="attended" value="${esc(id)}" checked>${avatar(id, 'xs')}${esc(name(id))}</label>`).join('')}</fieldset>`;
+  const proposed = state.resultProposals?.find(entry => entry.matchId === item.id && entry.status === 'pending')?.data;
+  const attendance = `<fieldset class="pick"><legend>${ic('users')}참석</legend>${people.map((id) => `<label class="pick-chip person-chip"><input type="checkbox" name="attended" value="${esc(id)}" ${!proposed || proposed.attendedIds.includes(id) ? 'checked' : ''}>${avatar(id, 'xs')}${esc(name(id))}</label>`).join('')}</fieldset>`;
   const score = (left, right, leftLabel, rightLabel, a, b) => `<div class="score"><label><span>${leftLabel}</span><input type="number" name="${left}" min="0" max="99" value="${a}" inputmode="numeric"></label><b>:</b><label><span>${rightLabel}</span><input type="number" name="${right}" min="0" max="99" value="${b}" inputmode="numeric"></label></div>`;
   let fields = '';
-  if (item.sport === 'tennis') fields = `<fieldset class="teams"><legend>팀</legend>${people.map((id, index) => `<div class="team-row">${avatar(id, 'xs')}<span>${esc(name(id))}</span><span class="seg mini ab">${['A', 'B'].map((team) => `<label><input type="radio" name="team-${esc(id)}" value="${team}" ${(index < (item.format === 'doubles' ? 2 : 1)) === (team === 'A') ? 'checked' : ''}>${team}</label>`).join('')}</span></div>`).join('')}</fieldset>${score('scoreA', 'scoreB', 'A', 'B', 6, 4)}<label class="toggle-chip"><input type="checkbox" name="noContest">${ic('x')}<span>경기 미성립</span></label>`;
-  else if (item.sport === 'futsal') fields = `${score('scoreFor', 'scoreAgainst', '우리', '상대', 2, 1)}<fieldset class="pick"><legend>${ic('star')}MVP</legend>${people.map((id, index) => `<label class="pick-chip person-chip"><input type="radio" name="mvpUserId" value="${esc(id)}" ${index === 0 ? 'checked' : ''}>${avatar(id, 'xs')}${esc(name(id))}</label>`).join('')}</fieldset><div class="entries">${people.map((id) => `<label class="entry">${avatar(id, 'xs')}<span>${esc(name(id))}</span><input name="position-${esc(id)}" value="${esc(user(id).sports.futsal.preference)}" maxlength="30" aria-label="${esc(name(id))} 포지션" placeholder="포지션"></label>`).join('')}</div>`;
-  else fields = `<div class="entries">${people.map((id) => `<div class="entry run">${avatar(id, 'xs')}<span>${esc(name(id))}</span><label><input type="number" min="0.1" max="200" step="0.1" name="distance-${esc(id)}" value="5.0" aria-label="${esc(name(id))} 거리"><i>km</i></label><label><input type="text" inputmode="numeric" pattern="[0-9]{1,2}:[0-5][0-9]" name="pace-${esc(id)}" value="05:40" aria-label="${esc(name(id))} 페이스"><i>/km</i></label><input class="review" name="review-${esc(id)}" maxlength="160" placeholder="한 줄 후기" aria-label="${esc(name(id))} 후기"></div>`).join('')}</div>`;
-  const body = `<form id="result-form" class="form" data-id="${esc(item.id)}">${attendance}${fields}<div class="sheet__actions"><button class="btn primary wide" type="submit">${ic('check')}기록</button></div></form>`;
+  if (item.sport === 'tennis') fields = `<fieldset class="teams"><legend>팀</legend>${people.map((id, index) => `<div class="team-row">${avatar(id, 'xs')}<span>${esc(name(id))}</span><span class="seg mini ab">${['A', 'B'].map((team) => `<label><input type="radio" name="team-${esc(id)}" value="${team}" ${(proposed?.teamAIds ? proposed.teamAIds.includes(id) : index < (item.format === 'doubles' ? 2 : 1)) === (team === 'A') ? 'checked' : ''}>${team}</label>`).join('')}</span></div>`).join('')}</fieldset>${score('scoreA', 'scoreB', 'A', 'B', proposed?.scoreA ?? 6, proposed?.scoreB ?? 4)}<label class="toggle-chip"><input type="checkbox" name="noContest" ${proposed?.noContest ? 'checked' : ''}>${ic('x')}<span>경기 미성립</span></label>`;
+  else if (item.sport === 'futsal') fields = `${score('scoreFor', 'scoreAgainst', '우리', '상대', proposed?.scoreFor ?? 2, proposed?.scoreAgainst ?? 1)}<fieldset class="pick"><legend>${ic('star')}MVP</legend>${people.map((id, index) => `<label class="pick-chip person-chip"><input type="radio" name="mvpUserId" value="${esc(id)}" ${(proposed?.mvpUserId ? proposed.mvpUserId === id : index === 0) ? 'checked' : ''}>${avatar(id, 'xs')}${esc(name(id))}</label>`).join('')}</fieldset><div class="entries">${people.map((id) => `<label class="entry">${avatar(id, 'xs')}<span>${esc(name(id))}</span><input name="position-${esc(id)}" value="${esc(proposed?.positions?.[id] ?? user(id).sports.futsal.preference)}" maxlength="30" aria-label="${esc(name(id))} 포지션" placeholder="포지션"></label>`).join('')}</div>`;
+  else fields = `<div class="entries">${people.map((id) => `<div class="entry run">${avatar(id, 'xs')}<span>${esc(name(id))}</span><label><input type="number" min="0.1" max="200" step="0.1" name="distance-${esc(id)}" value="${esc(proposed?.entries?.[id]?.distanceKm ?? 5)}" aria-label="${esc(name(id))} 거리"><i>km</i></label><label><input type="text" inputmode="numeric" pattern="[0-9]{1,2}:[0-5][0-9]" name="pace-${esc(id)}" value="${proposed?.entries?.[id] ? `${String(Math.floor(Number(proposed.entries[id].paceSec)/60)).padStart(2,'0')}:${String(Number(proposed.entries[id].paceSec)%60).padStart(2,'0')}` : '05:40'}" aria-label="${esc(name(id))} 페이스"><i>/km</i></label><input class="review" name="review-${esc(id)}" value="${esc(proposed?.reviews?.[id] ?? '')}" maxlength="160" placeholder="한 줄 후기" aria-label="${esc(name(id))} 후기"></div>`).join('')}</div>`;
+  const body = `<form id="result-form" class="form" data-id="${esc(item.id)}">${attendance}${fields}<div class="sheet__actions"><button class="btn primary wide" type="submit">${ic('check')}기록 제안</button></div></form>`;
   return sheet(`${old.SPORT_LABEL[item.sport]} 결과`, body, { wide: true, icon: sportIcon(item.sport, 'xs'), tone: item.sport });
 }
 
@@ -376,16 +476,16 @@ function profileModal(id, me) {
   const person = user(id); if (!person) return '';
   const friendship = d.friendsOf(state, me.id).includes(id);
   const hasPending = state.friendRequests.some((request) => [request.fromId, request.toId].includes(id) && [request.fromId, request.toId].includes(me.id) && request.status === 'pending');
-  const actions = [id !== me.id && !friendship && !hasPending ? `<button class="btn primary wide" data-action="friend-direct" data-id="${esc(id)}">${ic('userplus')}친구 신청</button>` : '', friendship ? `<button class="btn primary wide" data-action="invite" data-id="${esc(id)}">${ic('send')}운동 초대</button>` : '', hasPending ? pill('wait', 'clock', '신청 대기') : ''].filter(Boolean).join('');
+  const actions = [id !== me.id && !friendship && !hasPending ? `<button class="btn primary wide" data-action="friend-direct" data-id="${esc(id)}">${ic('userplus')}친구 신청</button>` : '', friendship ? `<button type="button" class="btn soft wide" data-action="open-chat" data-kind="direct" data-id="${esc(id)}">${ic('send')}채팅하기</button><button class="btn primary wide" data-action="invite" data-id="${esc(id)}">${ic('send')}운동 초대</button>` : '', hasPending ? pill('wait', 'clock', '신청 대기') : ''].filter(Boolean).join('');
   return sheet(person.name, `${renderPassportCard(state,person,deriveKongProfile(state,id,koreaToday()),{flipped:Boolean(modal?.passportFlipped),reducedMotion:reduceMotion(),own:false})}<button type="button" class="btn soft wide" data-action="recent-records" data-user="${esc(id)}">${ic('clock')}운동 기록 보기</button>${actions ? `<div class="sheet__actions">${actions}</div>` : ''}`, { wide: true });
 }
 function inviteModal(targetId, me) {
-  const available = state.matches.filter((item) => item.hostId === me.id && item.status === 'open' && !isDone(item) && !d.recruitmentClosed(item) && old.openSeats(item) && d.canViewMatch(state, item, targetId) && !item.applications.some((a) => a.userId === targetId) && !state.invitations.some((invite) => invite.toId === targetId && invite.matchId === item.id && invite.status === 'pending'));
+  const available = state.matches.filter((item) => item.hostId === me.id && item.status === 'open' && !isDone(item) && !d.recruitmentClosed(item) && old.openSeats(item) && d.canViewMatch(state, item, targetId) && !item.applications.some((a) => a.userId === targetId && !(a.status === 'expired' && a.closedReason === '일정 변경')) && !state.invitations.some((invite) => invite.toId === targetId && invite.matchId === item.id && invite.status === 'pending'));
   const body = available.length ? `<form id="invite-form" class="form" data-target="${esc(targetId)}"><div class="rows">${available.map((item, index) => `<label class="row pick-row">${sportIcon(item.sport)}<span class="row__body"><strong>${esc(item.title)}</strong><span class="meta">${ic('calendar')}${shortDate(item.date)} ${esc(item.startTime)}</span></span><input type="radio" name="matchId" value="${esc(item.id)}" ${index === 0 ? 'checked' : ''}></label>`).join('')}</div><div class="sheet__actions"><button class="btn primary wide" type="submit">${ic('send')}초대</button></div></form>` : `${emptyState('calendar', '초대할 내 자리가 없어요')}<div class="sheet__actions"><button class="btn primary wide" data-action="create">${ic('plus')}자리 만들기</button></div>`;
   return sheet(`${name(targetId)} 초대`, body);
 }
 function cardModal() {
-  const body = `<img class="card-preview" src="${esc(cardUrl)}" alt="DWNC ${modal.kind === 'today' ? '오늘 운동' : '프로필'} 카드"><div class="sheet__actions"><a class="btn primary wide" href="${esc(cardUrl)}" download="dwnc-${modal.kind}-${today()}.png">${ic('download')}저장</a></div>`;
+  const body = `<img class="card-preview" src="${esc(cardUrl)}" alt="beanifit ${modal.kind === 'today' ? '오늘 운동' : '프로필'} 카드"><div class="sheet__actions"><a class="btn primary wide" href="${esc(cardUrl)}" download="beanifit-${modal.kind}-${today()}.png">${ic('download')}저장</a></div>`;
   return sheet(modal.kind === 'today' ? '오늘 카드' : '프로필 카드', body, { wide: true });
 }
 function cardLoadingModal() { return sheet('카드 만드는 중', '<div class="loading" role="status"><span class="spinner"></span></div>'); }
@@ -396,15 +496,17 @@ function cancelConfirmModal(item) {
 
 function render() {
   cancelKongReaction();
-  if (loading) { root.innerHTML = '<main class="recovery" role="status">운동 기록을 불러오는 중…</main>'; return; }
+  if (loading) { chat.dispose(); root.innerHTML = '<main class="recovery" role="status">운동 기록을 불러오는 중…</main>'; return; }
   if (loadError) {
+    chat.dispose();
     document.body.classList.remove('dialog-open');
     root.innerHTML = `<main class="recovery">${ic('alert')}<h1>기록을 불러오지 못했어요</h1><p>${esc(loadError)}</p><button class="btn primary" data-action="reload-state">${ic('refresh')}다시 시도</button></main>`;
     return;
   }
-  if (!state) { cancelKongReaction(true); document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; return; }
+  if (!state) { chat.dispose(); cancelKongReaction(true); document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'beanifit · 로그인'; return; }
   const me = user(state.activeUserId);
   const page = route();
+  if (page !== 'community' || communityTab !== 'chats' || modal) chat.dispose();
   if (kongRewardUserId && kongRewardUserId !== me.id) kongRewardUserId = null;
   // A highlight survives the follow-up route render, then expires.
   if (pulseId && pulseId !== pulseFor) { pulseFor = pulseId; pulseUntil = performance.now() + 700; }
@@ -416,7 +518,7 @@ function render() {
   const modalKey = modal ? `${modal.type}:${modal.id || modal.kind || ''}` : null;
   const modalEnter = modalKey && modalKey !== lastModalKey; lastModalKey = modalKey;
   const switcher = `<a href="#/home" class="who">${avatar(me.id, 'sm')}<span class="who__name">${esc(me.name)}</span></a><button class="icon-btn" data-action="reload-state" aria-label="새로고침">${ic('refresh')}</button>`;
-  root.innerHTML = `<div class="shell"><div class="main"><header class="top"><a href="#/home" class="brand">DWNC<span>✳</span></a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('community', '커뮤니티', 'users')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
+  root.innerHTML = `<div class="shell"><div class="main"><header class="top"><a href="#/home" class="brand"><img src="./favicon.svg" alt="" width="28" height="28">beanifit</a><span class="top__spacer"></span><a href="#/notifications" class="icon-btn bell ${unread ? 'has' : ''}" aria-label="알림 ${unread}개">${ic('bell')}${unread ? `<b class="dot-count">${unread}</b>` : ''}</a>${switcher}</header><main class="content ${entering ? 'enter' : ''}" data-page="${page}">${signupRecovery()}${pageViews[page](me)}</main></div></div><nav class="tabbar ${entering ? 'moved' : ''}" aria-label="하단 메뉴">${navLink('home', '홈', 'home')}${navLink('matches', '매칭', 'calendar')}${navLink('ranking', '랭킹', 'trophy')}${navLink('community', '커뮤니티', 'users')}</nav>${modalContent ? `<div class="backdrop ${modalEnter ? 'enter' : ''}" data-action="close"><div class="sheet-wrap">${modalContent}</div></div>` : ''}`;
   restoreDrafts();
   document.body.classList.toggle('dialog-open', Boolean(modalContent));
   root.querySelector('.shell').inert = Boolean(modalContent);
@@ -426,7 +528,8 @@ function render() {
   if (flash) { const { text, error, icon } = flash; flash = null; showToast(text, error, icon); }
   if (page === 'home' && location.hash === '#/home' && homeCardFlipped && kongRewardUserId === me.id && !modalContent) { kongRewardUserId = null; animateKong(); }
   listAnimate = false;
-  document.title = `DWNC · ${pageTitle[page]}`;
+  document.title = `beanifit · ${pageTitle[page]}`;
+  if (page === 'community' && communityTab === 'chats' && !modalContent) chat.mount(root);
 }
 
 
@@ -473,15 +576,18 @@ root.addEventListener('click', async (event) => {
   if (action !== 'export-card') cardRequestId++;
   let exportRequestId = null;
   try {
-    if (action === 'close') closeModal();
-    else if (action === 'community-tab') { communityTab = id === 'groups' ? 'groups' : 'friends'; render(); }
+    if (action.startsWith('chat-')) { await chat.handleAction(action,button); return; }
+    if (action === 'open-chat') { modal = null; modalStack.length = 0; await chat.open({kind,...(kind === 'direct' ? {peerId:id} : kind === 'group' ? {groupId:id} : {matchId:id})}); }
+    else if (action === 'result-decide') { await save('result.decide',{proposalId:id,version:Number(button.dataset.version),decision},decision === 'accepted' ? '기록에 동의했어요' : '기록 제안을 거절했어요'); }
+    else if (action === 'close') closeModal();
+    else if (action === 'community-tab') { const next = ['friends','groups','chats'].includes(id) ? id : 'friends'; const hash = `#/community?tab=${next}`; if(location.hash !== hash) location.hash = hash; else { syncCommunityRoute(); render(); } }
     else if (action === 'flip-passport') {
       const card = button.closest('.passport-card')?.querySelector('.passport-flip');
       if (!card) return;
       const flipped = card.dataset.flipped !== 'true';
       card.dataset.flipped = String(flipped);
       for (const face of card.querySelectorAll('.passport-face')) { const hidden = face.classList.contains('passport-front') ? flipped : !flipped; face.inert = hidden; face.setAttribute('aria-hidden',String(hidden)); }
-      button.setAttribute('aria-pressed',String(flipped)); button.textContent = flipped ? '신분증 보기' : '콩 키우기 보기';
+      button.setAttribute('aria-pressed',String(flipped)); button.textContent = flipped ? '신분증 보기' : '콩 성장 보기';
       if (card.closest('.content')) homeCardFlipped = flipped; else if (modal?.type === 'profile') modal.passportFlipped = flipped;
       if (!flipped) cancelKongReaction(true);
       const mascot = card.querySelector('.kong-mascot');
@@ -493,30 +599,33 @@ root.addEventListener('click', async (event) => {
     }
     else if (action === 'recent-records') openModal({type:'records',id:userId || state.activeUserId},button);
     else if (action === 'kong-react') animateKong();
+    else if (action === 'demo-add-records') await saveDemoRecords('add10');
+    else if (action === 'demo-reset-records') await saveDemoRecords('reset');
     else if (action === 'reload-state') { loadError = null; await loadState(); }
+    else if (action === 'retry-signup-profile') await completeSignupProfile();
     else if (action === 'auth-mode') { authMode = id; render(); }
     else if (action === 'logout') {
       cancelKongReaction(true);
       pending = true; root.inert = true;
-      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); profileEditOpen = false; homeCardFlipped = false; lastPage = null; authMode = 'login'; render(); }
+      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false; homeCardFlipped = false; lastPage = null; authMode = 'login'; render(); }
       finally { pending = false; root.inert = false; }
     }
     else if (action === 'create') { openModal({ type: 'create' }, button); setCreateControls(); restoreDrafts(); setCreateVisibility(); }
     else if (action === 'create-group-match') { openModal({ type: 'create', groupId: id }, button); setCreateControls(); restoreDrafts(); setCreateVisibility(); }
     else if (action === 'create-group') { openModal({ type: 'group-create' }, button); }
     else if (action === 'group-detail') { openModal({ type: 'group-detail', id }, button); }
-    else if (action === 'join-group') { modal = null; pulseId = id; await save('group.join', {groupId:id}, '그룹 가입', 'flag'); }
+    else if (action === 'join-group') { pulseId = id; await save('group.join', {groupId:id}, '그룹 가입', 'flag', {closeModalOnSuccess:true}); }
     else if (action === 'details') { if (modal?.type === 'result') closeModal(); else openModal({ type: 'details', id }, button); }
     else if (action === 'result') { openModal({ type: 'result', id }, button); }
     else if (action === 'view-profile') { openModal({ type: 'profile', id }, button); }
     else if (action === 'invite') { openModal({ type: 'invite', id }, button); }
-    else if (action === 'apply') { modal = null; pulseId = id; await save('match.apply', {matchId:id}, '신청 완료', 'send'); }
+    else if (action === 'apply') { pulseId = id; await save('match.apply', {matchId:id}, '신청 완료', 'send', {closeModalOnSuccess:true}); }
     else if (action === 'decide') { modal = { type: 'details', id }; pulseId = `${id}:${userId}`; await save('match.decide', {matchId:id,applicantId:userId,decision}, decision === 'accepted' ? '수락 완료' : '거절함', decision === 'accepted' ? 'check' : 'x'); }
-    else if (action === 'withdraw') { modal = null; pulseId = id; await save('match.withdraw', {matchId:id}, '철회함', 'undo'); }
+    else if (action === 'withdraw') { pulseId = id; await save('match.withdraw', {matchId:id}, '철회함', 'undo', {closeModalOnSuccess:true}); }
     else if (action === 'cancel-match') { openModal({ type: 'cancel-confirm', id }, button); }
-    else if (action === 'confirm-cancel') { modal = null; pulseId = id; await save('match.cancel', {matchId:id}, '자리 취소됨', 'trash'); }
+    else if (action === 'confirm-cancel') { pulseId = id; await save('match.cancel', {matchId:id}, '자리 취소됨', 'trash', {closeModalOnSuccess:true}); }
     else if (action === 'friend-decide') await save('friend.decide', {requestId:id,decision}, decision === 'accepted' ? '친구가 됐어요' : '거절함', decision === 'accepted' ? 'users' : 'x');
-    else if (action === 'friend-direct') { const target = user(id); modal = null; await save('friend.request', {code:target.friendCode}, '친구 신청 보냄', 'userplus'); }
+    else if (action === 'friend-direct') { const target = user(id); await save('friend.request', {code:target.friendCode}, '친구 신청 보냄', 'userplus', {closeModalOnSuccess:true}); }
     else if (action === 'invite-decide') await save('invitation.decide', {invitationId:id,decision}, decision === 'accepted' ? '일정에 추가됨' : '거절함', decision === 'accepted' ? 'calendar' : 'x');
     else if (action === 'filter-sport') { const form = root.querySelector('#filter-form'); form.querySelector('[name="sport"]').value = id; if (filters.sport !== id) form.querySelector('[name="format"]').value = ''; applyFilters(form); }
     else if (action === 'toggle-filters') { advancedFiltersOpen = !advancedFiltersOpen; render(); }
@@ -572,38 +681,36 @@ root.addEventListener('submit', async (event) => {
       if (signup && !formData.getAll('chosenSports').length) throw new Error('즐기는 종목을 하나 이상 선택해 주세요.');
       pending = true; root.inert = true; root.setAttribute('aria-busy','true');
       try {
-        await api.request(signup ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email', {email:values.email.trim(),password:values.password,...(signup ? {name:values.name.trim()} : {})});
+        const authenticated = await api.request(signup ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email', {email:values.email.trim(),password:values.password,...(signup ? {name:values.name.trim()} : {})});
         // Password fields are discarded immediately after authentication.
+        signupCompletion = signup ? { ownerId: authenticated.user.id, region: values.region, ageRange: values.ageRange, chosenSports: formData.getAll('chosenSports') } : null;
         form.reset(); submittedForm = null;
         await loadState();
       } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }
-      if (signup && state) {
-        const me = user(state.activeUserId);
-        await save('profile.update',{name:me.name,region:values.region,ageRange:values.ageRange,gender:me.gender,bio:me.bio,avatar:me.avatar,chosenSports:formData.getAll('chosenSports'),sports:me.sports},'가입 완료');
-      }
+      if (signup && state) await completeSignupProfile();
       if (state) { location.hash = '#/home'; showToast(signup ? '가입 완료 · 환영합니다' : '로그인 완료'); }
       return;
     }
+    if (form.id.startsWith('chat-')) { await chat.handleSubmit(form); return; }
     if (form.id === 'filter-form') { applyFilters(form); return; }
     if (form.id === 'ranking-form') return;
     if (form.id === 'note-form') { await save('note.save', {date:today(),text:values.note}, '한 줄 저장', 'edit'); return; }
     if (form.id === 'friend-form') { await save('friend.request', {code:values.code}, '친구 신청 보냄', 'userplus'); return; }
-    if (form.id === 'group-form') { modal = null; await save('group.create', values, '그룹 생성', 'flag'); return; }
-    if (form.id === 'create-form') { modal = null; await save('match.create', values, '자리 등록', 'plus'); location.hash = '#/matches'; return; }
+    if (form.id === 'group-form') { await save('group.create', values, '그룹 생성', 'flag', {closeModalOnSuccess:true}); return; }
+    if (form.id === 'create-form') { await save('match.create', values, '자리 등록', 'plus', {closeModalOnSuccess:true}); location.hash = '#/matches'; return; }
     if (form.id === 'profile-form') {
       const sports = Object.fromEntries(formData.getAll('chosenSports').map((sport) => [sport, { experience: values[`${sport}-experience`], level: values[`${sport}-level`], preference: values[`${sport}-preference`], ...(sport === 'tennis' ? { ntrp: values['tennis-ntrp'] } : {}) }]));
       const payload = {name:values.name,region:values.region,ageRange:values.ageRange,gender:values.gender,bio:values.bio,avatar:values.avatar,chosenSports:formData.getAll('chosenSports'),sports}; await save('profile.update', payload, '프로필 저장', 'check'); profileEditOpen = false; render(); return;
     }
-    if (form.id === 'invite-form') { modal = null; await save('invitation.send', {matchId:values.matchId,targetId:form.dataset.target}, '초대 보냄', 'send'); return; }
+    if (form.id === 'invite-form') { await save('invitation.send', {matchId:values.matchId,targetId:form.dataset.target}, '초대 보냄', 'send', {closeModalOnSuccess:true}); return; }
     if (form.id === 'result-form') {
       const item = match(form.dataset.id), attendedIds = formData.getAll('attended');
       let payload = { attendedIds };
       if (item.sport === 'tennis') payload = { ...payload, noContest: formData.has('noContest'), teamAIds: old.participants(item).filter((id) => values[`team-${id}`] === 'A'), scoreA: values.scoreA, scoreB: values.scoreB };
       else if (item.sport === 'futsal') payload = { ...payload, scoreFor: values.scoreFor, scoreAgainst: values.scoreAgainst, mvpUserId: values.mvpUserId, positions: Object.fromEntries(old.participants(item).map((id) => [id, values[`position-${id}`]])) };
       else payload = { ...payload, entries: Object.fromEntries(attendedIds.map((id) => { const [minute, second] = String(values[`pace-${id}`] || '').split(':').map(Number); return [id, { distanceKm: values[`distance-${id}`], paceSec: minute * 60 + second }]; })), reviews: Object.fromEntries(attendedIds.map((id) => [id, values[`review-${id}`]])) };
-      modal = null; modalStack.length = 0;
-      const previousTotal = deriveKongProfile(state,state.activeUserId,koreaToday()).total; pulseId = item.id; const saved = await save('result.save', {matchId:item.id,data:payload}, '운동 기록 저장 · 콩이 자랐어요', 'check');
-      if (saved && deriveKongProfile(state,state.activeUserId,koreaToday()).total > previousTotal && location.hash !== '#/home') location.hash = '#/home';
+      const previousTotal = deriveKongProfile(state,state.activeUserId,koreaToday()).total; pulseId = item.id; const saved = await save('result.save', {matchId:item.id,data:payload}, '기록 제안됨 · 참가자 확인 대기', 'check', {closeModalOnSuccess:true});
+      if (saved && deriveKongProfile(state,state.activeUserId,koreaToday()).total <= previousTotal) { modal = {type:'details',id:item.id}; render(); }
 
       return;
     }
@@ -611,9 +718,9 @@ root.addEventListener('submit', async (event) => {
   } catch (error) { feedback(error.message || '입력을 확인해 주세요.'); } finally { submittedForm = null; }
 });
 
-window.addEventListener('hashchange', () => { cardRequestId++; communityTab = location.hash.startsWith('#/groups') || new URLSearchParams(location.hash.split('?')[1] || '').get('tab') === 'groups' ? 'groups' : 'friends'; homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong' || Boolean(kongRewardUserId); routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); });
+window.addEventListener('hashchange', () => { cardRequestId++; syncCommunityRoute(); homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong' || Boolean(kongRewardUserId); routeModal(); render(); window.scrollTo({ top: 0, behavior: 'instant' }); });
 window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => { cancelKongReaction(true); render(); });
-window.addEventListener('pagehide', () => cancelKongReaction(true));
+window.addEventListener('pagehide', () => { chat.dispose(); cancelKongReaction(true); });
 window.addEventListener('keydown', (event) => {
   if (!modal) return;
   if (event.key === 'Escape') { closeModal(); return; }
@@ -626,7 +733,7 @@ window.addEventListener('keydown', (event) => {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   else if (document.activeElement === dialog) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
 });
-communityTab = location.hash.startsWith('#/groups') || new URLSearchParams(location.hash.split('?')[1] || '').get('tab') === 'groups' ? 'groups' : 'friends'; homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong';
+syncCommunityRoute(); homeCardFlipped = new URLSearchParams(location.hash.split('?')[1] || '').get('face') === 'kong';
 routeModal();
 render();
 await loadState();

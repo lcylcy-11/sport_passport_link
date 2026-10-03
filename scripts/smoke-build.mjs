@@ -10,7 +10,7 @@ try {
   const base = `http://127.0.0.1:${app.server.address().port}`;
   const index = await fetch(base); assert.equal(index.status,200);assert.ok((await index.text()).includes('./app.js'));
   assert.equal((await fetch(base+'/api.js')).status,200);
-  for (const file of ['kong.js','kong-profile.js','kong-profile-view.js','kong-profile.css','passport-view.js','service-model.js','service-glass.css']) assert.equal((await fetch(`${base}/${file}`)).status,200,`${file} must be included and served`);
+  for (const file of ['clock.js','kong.js','kong-profile.js','kong-profile-view.js','kong-profile.css','passport-view.js','service-model.js','service-glass.css','home-summary.js','home-summary.css','chat-view.js','chat.css','collaboration-domain.js','workout-share-data.js']) assert.equal((await fetch(`${base}/${file}`)).status,200,`${file} must be included and served`);
   assert.equal((await fetch(base+'/api/health')).status,200);
   assert.equal((await fetch(base+'/api/state')).status,401);
   assert.equal((await fetch(base+'/server.js')).status,404);

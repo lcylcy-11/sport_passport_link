@@ -28,7 +28,7 @@ test('public identity is the default face and exposes actual age, gender and spo
   assert.match(html, /3년/);
   assert.match(html, /중급/);
   assert.match(html, /data-action="flip-passport" data-user="u1"/);
-  assert.match(html, /aria-pressed="false"[^>]*>[^<]*콩 키우기 보기/);
+  assert.match(html, /aria-pressed="false"[^>]*>[^<]*콩 성장 보기/);
   assert.doesNotMatch(html, /스탬프|STAMPS|stamp-grid|data-action="stamp"/);
 });
 
@@ -75,4 +75,44 @@ test('shared Kong history exports real detail links without any identity card or
   assert.match(html, /data-action="details" data-id="m1"/);
   assert.match(html, /최근 2주/);
   assert.doesNotMatch(html, /스탬프|stamp-grid|kong-name|href="#\/matches"/);
+});
+
+test('public manner renders five empty stars without inventing legacy votes', () => {
+  const html = passport.renderPassportCard({}, { ...person, manner: 4.9, publicManner: 4.9 }, derived);
+  assert.match(html, /아직 평가가 없어요/);
+  assert.match(html, /role="img" aria-label="매너 평가가 아직 없습니다"/);
+  assert.equal((html.match(/class="passport-manner-star"/g) || []).length, 5);
+  assert.equal((html.match(/--star-fill:0%/g) || []).length, 5);
+  assert.doesNotMatch(html, /4\.9 \/ 5|5건/);
+});
+
+test('owner and visitor identity show the real fractional average and rating count accessibly', () => {
+  for (const own of [true, false]) {
+    const html = passport.renderPassportCard({}, { ...person, publicMannerSummary: { average: 4.2, count: 12 } }, derived, { own });
+    assert.match(html, /role="img" aria-label="매너 평점 5점 만점에 4\.2점, 실제 평가 12건"/);
+    assert.match(html, /4\.2 \/ 5 · 12건/);
+    assert.equal((html.match(/--star-fill:100%/g) || []).length, 4);
+    assert.equal((html.match(/--star-fill:20%/g) || []).length, 1);
+    assert.match(html, /passport-manner-star"[^>]*aria-hidden="true"/);
+  }
+});
+
+test('five-star average fills all five stars and invalid summary remains honestly empty', () => {
+  const html = passport.renderPassportCard({}, { ...person, publicMannerSummary: { average: 5, count: 1 } }, derived);
+  assert.equal((html.match(/--star-fill:100%/g) || []).length, 5);
+  assert.match(html, /5\.0 \/ 5 · 1건/);
+  for (const summary of [{ average: null, count: 0 }, { average: 9, count: 1 }, { average: 4, count: -1 }]) {
+    const empty = passport.renderPassportCard({}, { ...person, publicMannerSummary: summary }, derived);
+    assert.match(empty, /아직 평가가 없어요/);
+    assert.equal((empty.match(/--star-fill:0%/g) || []).length, 5);
+  }
+});
+
+test('visitor shares the home card tone while retaining public identity, existing flip and no demo controls', () => {
+  const html = passport.renderPassportCard({demoControls:true}, person, derived);
+  assert.match(html,/data-home-owner="false"/);
+  for (const text of ['TENNIS','FUTSAL','RUNNING','여성','20대','관악구','구력 3년','운동 &lt;친구&gt;를 찾아요.']) assert.ok(html.includes(text),text);
+  assert.match(html,/data-action="flip-passport"/);
+  assert.match(html,/passport-back[^>]*aria-hidden="true"[^>]*inert/);
+  assert.doesNotMatch(html,/demo-add-records|demo-reset-records|data-kong-activity/);
 });

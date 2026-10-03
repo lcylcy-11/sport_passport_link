@@ -1,0 +1,23 @@
+# Vercel + Supabase
+
+The Vercel Node 24 function `api/index.js` replaces local Better Auth/SQLite only in the hosted runtime. Local `npm start` continues using the existing SQLite server. Existing domain validation, private projections, chat ACLs, unanimous approvals, ratings and idempotency receipts run unchanged in memory for each cloud request.
+
+1. Create a Supabase project and run `backend/supabase-schema.sql` in its SQL editor. The schema is idempotent and starts with empty sports data; it does not import the local fictional database.
+2. Enable Email/password authentication. Set the Supabase Site URL to the final HTTPS app origin. With Confirm email enabled, registration reports that a confirmation email is required and users must confirm before signing in. Disable Confirm email only if the project owner explicitly chooses immediate signup. Supabase manages password storage and authentication rate limits.
+3. Set Vercel **server environment variables**: `APP_ORIGIN` (exact HTTPS origin, no path), `SUPABASE_URL` (project HTTPS origin), `SUPABASE_ANON_KEY` (project anon JWT), `SUPABASE_SERVICE_ROLE_KEY` (project service-role JWT). Never use a public/browser environment prefix for the service key. Set the Node runtime to 24.x.
+4. Serve the built `dist` frontend and rewrite `/api/:path*` to `/api/index`. Include backend SQL migrations and domain modules in the function bundle. The root Vercel configuration owns these settings.
+5. Deploy to the approved existing URL. A successful `GET /api/health` must return `{ok:true,storage:"supabase"}` before cloud readiness is claimed. Check real signup/login, reload, second-user friendship/chat, unanimous appointments/results, logout and private ACLs against the deployed URL.
+
+Supabase Auth is checked remotely for every authenticated request. Access and refresh tokens reside in `__Host-` cookies with HttpOnly, Secure and SameSite=Lax. Refresh rotates through Supabase and validates the new access token remotely. All POST requests require the configured Origin.
+
+Sports persistence is one server-only JSON capsule in a private PostgreSQL schema. Anonymous/authenticated users have no SELECT access and cannot execute the read/commit RPCs. The service-role-only commit RPC takes a row lock and compares the capsule revision atomically. A competing write returns HTTP 409 rather than overwriting another request. Domain command receipts and chat UUID deduplication persist in the same atomic write, so a committed request whose response was lost is safe to replay. Chat writes preserve the separate existing sports revision. A conflicting request must reload/retry; no successful response is sent before persistence succeeds.
+
+The capsule is bounded at 20 MiB and request JSON at 256 KiB (auth at 16 KiB). This supports the initial MVP, with whole-state reads/writes and shared contention; it is not a large-scale per-row database design. Failures return 503/409/507 without false save claims. Migrate to normalized PostgreSQL tables before growing beyond this boundary. Use Supabase project backups; retain the SQL schema and environment configuration for recovery. This setup never publishes credentials or migrates local demo accounts.
+
+Run adapter checks with `node --test backend/cloud-store.test.js`. They use isolated memory SQLite and fake Supabase responses, without accounts, network keys or real external data. Actual Supabase SQL execution and deployment verification are separate required evidence.
+
+## Fictional demonstration controls
+
+`DEMO_USER_IDS` is an optional server-only comma-separated allowlist of explicitly fictional Supabase user UUIDs. Empty/unset disables controls for every account. Only allowlisted actors receive `demoControls:true` in `/api/state`; authenticated `POST /api/demo/records` also checks the server allowlist and Origin. Its body contains `action` (`add10` or `reset`) and a unique UUID `requestId` (optionally `expectedUserId`). Keep the same request UUID when retrying a lost response.
+
+`add10` writes ten owner-only confirmed personal running results in the last ten days, each 5km, using existing domain validation. Kong/session counts rise by ten and running distance rises by 50km together. It fabricates no opponent, win, MVP or peer approval. `reset` removes only server-marked demonstration records for that owner. Existing real/seeded records, profiles and other owners' records stay preserved. A new empty fictional account returns to zero; an account with earlier real/seeded data returns to that baseline. Both actions increment the normal sports revision once and persist their command receipt atomically with the capsule.

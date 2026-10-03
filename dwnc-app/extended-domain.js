@@ -1,4 +1,5 @@
 import * as base from './domain.js';
+import { koreaToday, koreaTime, isCalendarDate } from './clock.js';
 
 export const AVATARS = ['✳', '◎', '↗', '✦', '◉', '★'];
 export const VISIBILITY = ['public', 'friends', 'group'];
@@ -11,10 +12,11 @@ const uid = (state, id) => state.users.find((user) => user.id === id);
 const mid = (state, id) => state.matches.find((match) => match.id === id);
 const gid = (state, id) => state.groups.find((group) => group.id === id);
 const ids = (match) => base.participants(match);
+const renewable = application => application.status === 'expired' && application.closedReason === '일정 변경';
 const unique = (values) => [...new Set(values)];
 const formatFor = (sport) => ({ tennis: 'singles', futsal: 'team', running: 'crew' }[sport]);
 const validTime = (value) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
-const validDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00`)) && new Date(`${value}T12:00:00`).toISOString().slice(0, 10) === value;
+const validDate = isCalendarDate;
 const validPace = (value) => Number.isInteger(value) && value >= 120 && value <= 1800;
 const validDistance = (value) => Number.isFinite(value) && value > 0 && value <= 200;
 const sameSet = (left, right) => left.length === right.length && left.every((id) => right.includes(id));
@@ -121,6 +123,17 @@ export function validateV2(state) {
     const result = state.results.find((item) => item.matchId === rating?.matchId);
     if (!result || !result.attendedIds.includes(rating.fromId) || !result.attendedIds.includes(rating.toId) || rating.fromId === rating.toId || !Number.isInteger(rating.value) || rating.value < 1 || rating.value > 5) return false;
   }
+  const proposalIds = new Set();
+  for (const collection of ['appointmentProposals','resultProposals']) {
+    if (state[collection] !== undefined && !Array.isArray(state[collection])) return false;
+    for (const p of state[collection] || []) {
+      if (!p || typeof p.id !== 'string' || !p.id || proposalIds.has(p.id) || !Number.isInteger(p.version) || p.version < 1 || !userIds.has(p.proposedBy) || !Array.isArray(p.participantIds) || !p.participantIds.length || !p.participantIds.includes(p.proposedBy) || !sameSet(p.participantIds,unique(p.participantIds)) || p.participantIds.some(id => !userIds.has(id)) || !Array.isArray(p.approvedIds) || !sameSet(p.approvedIds,unique(p.approvedIds)) || p.approvedIds.some(id => !p.participantIds.includes(id)) || !['pending','confirmed','rejected','superseded','invalid'].includes(p.status) || typeof p.createdAt !== 'string' || Number.isNaN(Date.parse(p.createdAt))) return false;
+      if (collection === 'resultProposals' && (!matchIds.has(p.matchId) || !plainObject(p.data) || typeof p.originalMatch !== 'string')) return false;
+      if (collection === 'appointmentProposals' && (typeof p.roomId !== 'string' || !plainObject(p.details) || !base.SPORTS.includes(p.details.sport) || !validDate(p.details.date) || !validTime(p.details.startTime) || !validTime(p.details.endTime) || p.details.startTime >= p.details.endTime || p.participantIds.length < 2)) return false;
+      if (p.status === 'confirmed' && (!p.participantIds.every(id => p.approvedIds.includes(id)) || !matchIds.has(p.matchId))) return false;
+      proposalIds.add(p.id);
+    }
+  }
   return true;
 }
 
@@ -176,6 +189,7 @@ export function joinGroup(state, groupId, userId) {
 }
 export function canViewMatch(state, match, userId) {
   if (!match || !uid(state, userId)) return false;
+  if (match.participantOnly) return ids(match).includes(userId);
   if (match.hostId === userId || match.applications.some((a) => a.userId === userId)) return true;
   if (match.status === 'cancelled') return false;
   if (match.visibility === 'public') return true;
@@ -185,15 +199,15 @@ export function canViewMatch(state, match, userId) {
 export function visibleMatches(state, userId) { return state.matches.filter((match) => canViewMatch(state, match, userId)); }
 // Shared eligibility for discovery, detail buttons and mutations.
 export function recruitmentClosed(match, now = new Date()) {
-  if (!match) return true;
-  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  if (!match || match.recruitmentClosed) return true;
+  const day = koreaToday(now);
+  const time = koreaTime(now);
   return match.date < day || match.date === day && match.endTime <= time;
 }
 export function canRequestMatch(state, match, userId, now = new Date()) {
   return canViewMatch(state, match, userId) && match.status === 'open' &&
     !base.isCompleted(state, match.id) && !recruitmentClosed(match, now) &&
-    match.hostId !== userId && !match.applications.some(a => a.userId === userId) && base.openSeats(match) > 0;
+    match.hostId !== userId && !match.applications.some(a => a.userId === userId && !renewable(a)) && base.openSeats(match) > 0;
 }
 function closePending(state, match, reason) {
   for (const application of match.applications.filter(a => a.status === 'pending')) {
@@ -209,7 +223,7 @@ function closePending(state, match, reason) {
 export function reconcileRequests(state) {
   const next = clone(state);
   for (const match of next.matches) {
-    for (const application of match.applications) if (application.status === 'expired') {
+    for (const application of match.applications) if (application.status === 'expired' && !renewable(application)) {
       application.status = 'rejected'; application.closedReason ||= match.status === 'cancelled' ? '자리 취소' : '운동 완료';
     }
     if (match.status === 'cancelled' || base.isCompleted(next, match.id))
@@ -235,7 +249,9 @@ export function requestMatch(state, matchId, userId, now = new Date()) {
   if (!canViewMatch(state, match, userId)) fail('볼 수 없는 운동 자리입니다.');
   if (match.status !== 'open') fail('취소된 운동 자리에는 신청할 수 없습니다.');
   if (recruitmentClosed(match, now)) fail('모집 시간이 종료된 운동입니다. 다른 자리를 찾아 주세요.');
-  const next = base.applyToMatch(state, matchId, userId);
+  const renewed = clone(state);
+  mid(renewed,matchId).applications = match.applications.filter(a => a.userId !== userId || !renewable(a));
+  const next = base.applyToMatch(renewed, matchId, userId);
   const invitation = next.invitations.find((item) => item.matchId === matchId && item.toId === userId && item.status === 'pending');
   if (invitation) { invitation.status = 'accepted'; mid(next, matchId).applications.find((a) => a.userId === userId).status = 'accepted'; notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title} 초대를 수락했습니다.`, matchRoute(match.id)); }
   else notify(next, match.hostId, `${uid(next, userId).name}님이 ${match.title}에 신청했습니다.`, matchRoute(match.id));
@@ -266,7 +282,7 @@ export function cancelMatch(state, matchId, hostId) {
 }
 export function inviteToMatch(state, matchId, fromId, toId, now = new Date()) {
   const next = clone(state); const match = mid(next, matchId);
-  if (!match || recruitmentClosed(match, now) || match.hostId !== fromId || match.status !== 'open' || base.isCompleted(next, matchId) || !uid(next, toId) || !friendsOf(next, fromId).includes(toId) || !canViewMatch(next, match, toId) || !base.openSeats(match) || match.applications.some((a) => a.userId === toId)) fail('이 친구를 해당 운동에 초대할 수 없습니다.');
+  if (!match || recruitmentClosed(match, now) || match.hostId !== fromId || match.status !== 'open' || base.isCompleted(next, matchId) || !uid(next, toId) || !friendsOf(next, fromId).includes(toId) || !canViewMatch(next, match, toId) || !base.openSeats(match) || match.applications.some((a) => a.userId === toId && !renewable(a))) fail('이 친구를 해당 운동에 초대할 수 없습니다.');
   if (next.invitations.some((i) => i.matchId === matchId && i.toId === toId && i.status === 'pending')) fail('이미 초대한 친구입니다.');
   const id = nextId(next, 'invite'); next.invitations.push({ id, matchId, fromId, toId, status: 'pending' });
   notify(next, toId, `${uid(next, fromId).name}님이 ${match.title}에 초대했습니다.`, '#/people'); return next;
@@ -276,7 +292,8 @@ export function decideInvitation(state, invitationId, userId, decision, now = ne
   if (!invitation || invitation.toId !== userId || invitation.status !== 'pending' || !['accepted', 'declined'].includes(decision)) fail('처리할 수 없는 운동 초대입니다.');
   const match = mid(next, invitation.matchId);
   if (decision === 'accepted') {
-    if (!match || recruitmentClosed(match, now) || match.status !== 'open' || base.isCompleted(next, match.id) || !canViewMatch(next, match, userId) || !base.openSeats(match) || match.applications.some((a) => a.userId === userId)) fail('이 초대는 더 이상 수락할 수 없습니다.');
+    if (!match || recruitmentClosed(match, now) || match.status !== 'open' || base.isCompleted(next, match.id) || !canViewMatch(next, match, userId) || !base.openSeats(match) || match.applications.some((a) => a.userId === userId && !renewable(a))) fail('이 초대는 더 이상 수락할 수 없습니다.');
+    match.applications = match.applications.filter(a => a.userId !== userId || !renewable(a));
     match.applications.push({ userId, status: 'accepted' });
   }
   invitation.status = decision;
@@ -333,12 +350,13 @@ export function rateParticipant(state, matchId, fromId, toId, value) {
   if (next.ratings.some((item) => item.matchId === matchId && item.fromId === fromId && item.toId === toId)) fail('이미 이 참가자를 평가했습니다.');
   next.ratings.push({ matchId, fromId, toId, value: rating }); notify(next, toId, `${uid(next, fromId).name}님이 함께한 운동의 매너 평가를 남겼습니다.`, matchRoute(matchId)); return next;
 }
-export function mannerFor(state, userId) {
-  const user = uid(state, userId); if (!user) return 0;
-  if (Number.isFinite(user.publicManner)) return user.publicManner;
-  const values = state.ratings.filter((rating) => rating.toId === userId).map((rating) => rating.value);
-  return Math.round((user.manner * 5 + values.reduce((sum, value) => sum + value, 0)) / (5 + values.length) * 10) / 10;
+export function mannerSummaryFor(state, userId) {
+  const user = uid(state,userId);
+  if (user?.publicMannerSummary) return user.publicMannerSummary;
+  const values = (state.ratings || []).filter(r => r.toId === userId).map(r => r.value);
+  return { average: values.length ? values.reduce((sum,value) => sum+value,0)/values.length : null, count: values.length };
 }
+export function mannerFor(state, userId) { return mannerSummaryFor(state,userId).average ?? 0; }
 export function setDailyNote(state, userId, date, text) {
   if (!uid(state, userId) || !validDate(date) || clean(text).length > 140) fail('오늘의 한 줄은 140자 이내로 적어 주세요.');
   if (!plainObject(state.dailyNotes) || (Object.hasOwn(state.dailyNotes, userId) && !plainObject(state.dailyNotes[userId]))) fail('오늘 기록의 저장 형식이 올바르지 않습니다.');

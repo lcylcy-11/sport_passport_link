@@ -38,7 +38,18 @@ h1, h2, h3, p { margin: 0; }
 .profile-sport-details summary { cursor: pointer; font-size: 14px; font-weight: 700; }
 .profile-sport-details .bsports { margin-top: 12px; }
 .side { display: none; }
-.brand { font-weight: 900; font-size: 22px; letter-spacing: -.08em; color: var(--deep); }
+.brand { display:inline-flex; align-items:center; gap:6px; font-weight:900; font-size:24px; letter-spacing:-.065em; color:var(--deep); }
+.brand img { width:28px; height:28px; flex:none; }
+.top .brand { flex:none; font-size:20px; gap:4px; }
+.top .brand img { width:24px; height:24px; }
+.top .who { min-width:0; max-width:104px; }
+.top .who strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media(max-width:350px) {
+  .top { padding-inline:10px; gap:6px; }
+  .top .brand { font-size:19px; }
+  .top .who { max-width:88px; padding-right:7px; }
+  .top .icon-btn { width:36px; height:36px; min-width:36px; flex:none; }
+}
 .brand span { color: #8cc152; margin-left: 2px; font-size: .8em; vertical-align: .25em; }
 .top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; height: 60px; padding: 0 16px; background: #eef1f4e6; backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid #14342a0d; }
 .demo-tag { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: var(--green); background: var(--green-soft); padding: 3px 6px; border-radius: 6px; }
@@ -544,3 +555,6 @@ legend .ic { width: 15px; height: 15px; color: var(--ink3); }
 .top .text-btn{white-space:nowrap;font-size:12px;padding:8px 2px}
 .top .who{text-decoration:none;color:inherit;flex-shrink:0}
 .top .who__name{max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.auth-panel h1{font-size:24px}
+
+.signup-recovery { flex-direction: column; align-items: flex-start; gap: 12px; }
+.signup-recovery .btn { flex-shrink: 0; }

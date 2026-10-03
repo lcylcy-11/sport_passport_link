@@ -51,7 +51,7 @@ function resultText({match,result},userId) {
 async function profile(ctx,state,user) {
   const derived=deriveKongProfile(state,user.id,koreaToday());
   glass(ctx,36,34,548,562); glass(ctx,608,34,556,562);
-  write(ctx,'DWNC ✳  SPORT ID',72,86,18,MUTED,600); write(ctx,user.friendCode,364,86,16,MUTED,600,180);
+  write(ctx,'beanifit  SPORT ID',72,86,18,MUTED,600); write(ctx,user.friendCode,364,86,16,MUTED,600,180);
   await photo(ctx,user,72,116,120,152);
   write(ctx,'닉네임',216,140,15,MUTED); write(ctx,user.name,216,187,40,INK,400,330);
   write(ctx,`${user.gender || '미입력'} · ${user.ageRange || '미입력'}`,216,223,18,MUTED,500,330);
@@ -82,7 +82,7 @@ async function profile(ctx,state,user) {
 }
 async function daily(ctx,state,user) {
   glass(ctx,36,34,1128,562); await photo(ctx,user,996,72,124,140);
-  write(ctx,'DWNC ✳  TODAY IN MOTION',76,94,22,MUTED,600,870);
+  write(ctx,'beanifit  TODAY IN MOTION',76,94,22,MUTED,600,870);
   write(ctx,`${user.name}님의 오늘`,76,180,48,INK,400,840); write(ctx,today(),76,221,20,MUTED,500);
   const items=state.matches.filter(item=>item.date===today() && (item.hostId===user.id || item.applications.some(a=>a.userId===user.id && a.status==='accepted')));
   if(!items.length)write(ctx,'오늘의 운동을 함께 시작해요.',76,332,25,MUTED,500,1040);

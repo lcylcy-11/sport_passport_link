@@ -1,6 +1,40 @@
 # DWNC 노트북 인계
 
+
+## 데스크톱 이관 기준 — 2026-10-04, T31
+
+사용자가 실제 Git 상태를 확인한 뒤 현재 `codex/dwnc-backend-auth` 브랜치에 최종 앱 변경을 커밋·푸시하도록 명시적으로 승인했습니다. 데스크톱에서는 `https://github.com/lcylcy-11/sport_passport_link.git`의 **`codex/dwnc-backend-auth`**를 받으세요. `main`은 이번 작업에서 변경하지 않으며 브랜치 날짜를 기준으로 정본을 바꾸지 마세요.
+
+T26/T27/T29 통합 코드와 T30 QA 기록을 포함합니다. 시안·발표자료·이미지 81개 및 `.env`·개인 DB·런타임·산출물은 원본 노트북에 보존하고 제외했습니다. 필수 앱 자산은 모두 기존 추적 파일 또는 이 커밋에 포함됩니다. 설치·빌드·전체 테스트·기능 수정·재배포 없이 이관만 준비했습니다. T30의 동시 채팅/가입/자동 갱신 문제는 아직 남아 있습니다. 최종 커밋 SHA와 원격 일치는 푸시 후 executor의 이관 완료 보고를 기준으로 확인하세요.
+
+```powershell
+git clone --branch codex/dwnc-backend-auth https://github.com/lcylcy-11/sport_passport_link.git
+```
+## 최신 공개 통합본 — 2026-10-03, T29
+
+사용자 승인으로 https://beanifit-dwnc.vercel.app/ 에 Vercel + Supabase 백엔드를 배포했습니다. 공개 서비스 표기는 beanifit입니다. T26 채팅/합의/별점, T27 통계, 감사 결함 수정, 원본 브랜치 홈·친구 카드 디자인 및 허용된 시연 계정 기록 제어를 통합했습니다. 로컬 Better Auth/SQLite 서버와 원본 DB는 보존합니다.
+
+클라우드는 `api/index.js`, `backend/cloud-store.js`, `backend/supabase-schema.sql`, `vercel.json`, `scripts/build-cloud.mjs`를 사용합니다. 서버 키는 Vercel Secret에만 두고 저장소·브라우저 파일에 넣지 마세요. [CLOUD-SETUP](docs/CLOUD-SETUP.md)에 구성과 운영 한계를 설명했습니다. 이후 아래의 과거 “배포 미승인” 설명은 이 배포 이전 로컬 인계 기록입니다.
+
+시연: `kong@example.test` / `BeanifitDemo2026!`로 로그인하면 홈 버튼으로 콩·프로필 기록 0→10→0이 가능합니다. 기존 풍부한 기록 계정은 `minseo@example.test`와 같은 허구 비밀번호입니다. 초기화는 추가한 시연 기록만 지웁니다. 실제 공개 배포의 로그인·새로고침 후 기록 유지·중복 요청 방지까지 검증했습니다. 최신 배포 ID는 `dpl_2Y5bqr3WTebTqpYurtvo3qRscptV`입니다.
+
 정본 저장소는 `sport_passport_link`이며, `main`과 `codex/dwnc-backend-auth` 모두 실제 인증·SQLite 백엔드를 포함합니다. 이전 브라우저 데모는 과거 커밋 `c5f4de9`에 보존되어 있습니다. 이 문서는 로컬 개발·해커톤 시연용이며 운영 배포 승인을 뜻하지 않습니다.
+
+## 채팅·합의·별점 인계 — 2026-10-03, T26
+
+후속 T27 홈 통계 카드가 통합됐습니다. kdh 브랜치의 간결한 이름/지역/종목별 통계 구성을 현재 모바일 홈에 적용하고 자세한 신분증은 펼침 영역에 보존했습니다. `home-summary.js/css`와 `passport-view.js`의 본인 카드 연결만 담당하며, 타인 신분증·콩 v3·T26 별점·채팅·확정 승인 경계는 유지합니다. 별도 시연은 `node .runtime/home-stats-integration/preview.mjs` 후 **http://127.0.0.1:4199/__demo**입니다. 기존 서버는 재시작하지 않았으므로 새 정적 파일을 읽으려면 정상 재시작하세요. DB 초기화는 필요 없습니다. 통합 범위와 최종 검증은 CURRENT-STATE의 T27을 보세요.
+
+사용자가 설계 후 병렬 구현을 승인했습니다. 커뮤니티에 친구/그룹/채팅 탭을 추가했고, 친구·확정 매칭·현재 그룹 회원끼리 저장되는 텍스트 대화를 제공합니다. 약속은 날짜·시간·장소·주소와 참가자 명단을 제안하고 전원 승인 후 내 운동에 반영합니다. 변경안은 버전과 동의를 새로 만들며 마지막 승인 때 일정 충돌을 검사합니다. 친구 약속은 참가자 전용, 새 약속은 모집 종료 상태입니다.
+
+`result.save`는 이제 즉시 저장 대신 기록 제안입니다. 원래 확정 명단 전원(불참으로 기록된 사람 포함)이 동일 버전을 승인해야 `results`에 한 번 들어갑니다. 승인 대기에는 콩·승률·랭킹·공유 기록이 증가하지 않습니다. 확정된 실제 참석자끼리 1~5점 평가를 제출하며 공개 신분증은 실제 평균·건수를 다섯 별로 보여줍니다. 기존 확정 데이터는 그대로 최종 기록이며 다시 승인하지 않습니다.
+
+책임 경계는 `backend/chat.js`(방 접근·메시지 저장/중복 방지/cursor), `dwnc-app/collaboration-domain.js`(불변 버전·승인·일정 전환), `chat-view.js/chat.css`(대화 UI·4초 조회·초안 보존), `passport-view.js`(별점), `workout-share-data.js`(확정 기록 전용 어댑터)입니다. SQLite는 시작 시 001→002를 순차 적용합니다. 메시지는 운동 revision을 변경하지 않습니다. 오래된 제안 버전과 현재 방 접근권한을 서버가 검사합니다.
+
+팀원 SNS 카드 연결은 [데이터 계약 v1](docs/workout-share-contract.md)의 `listConfirmedWorkoutShareData(state,ownerId,{date})`와 `getConfirmedWorkoutShareData(state,ownerId,matchId)`를 사용하세요. 종목별 점수/승패, 본인의 러닝 거리·페이스·후기, 장소, 확정 시각과 과거 기록 여부를 제공합니다. 기존 카드 파일과 다른 브랜치는 수정하지 않았습니다. 지도는 장소·주소를 담은 Google Maps 검색 링크이며 SDK·현위치 수집·반경 매칭·SNS 게시·운영 배포는 별도 작업입니다.
+
+별도 허구 시연 서버는 **http://127.0.0.1:4192/#/community?tab=chats**, 실행은 `node .runtime/t26/preview-server.mjs`입니다. 미리보기 전용 `.runtime/t26/preview-v2.sqlite`에 하늘/지우/민재 계정, 확정 러닝·별점, 2/3 승인 상태의 그룹 약속을 넣었습니다. 로그인: `haneul@example.test` / `Preview-fictional-583!` (실계정 정보가 아닌 허구 시연 값). 여러 로컬 포트의 앱을 같은 브라우저에서 함께 로그인하면 호스트 쿠키를 공유하므로 시크릿 창이나 별도 브라우저로 시연하세요. 원본 DB와 기존 서버를 초기화하지 않습니다.
+
+T26 최종 검증: `npm run check` 문법·strict 타입검사·109/109·31파일 빌드 PASS; 기존 Chromium 13/13와 새 협업 3/3 PASS; 산출물 실행 검사 PASS. 새 협업 실행은 `.runtime/t26/collaboration-final/.last-run.json`이 passed/failedTests=[]이며 기존 실행도 `.runtime/t26/regression-final`에 passed로 남습니다. 원본 시안·README 75파일과 SQLite/WAL/SHM 3파일 SHA-256 변화 0. 물리 기기·Safari는 미검증입니다. 이번 작업은 로컬 변경으로 유지하며 신규 커밋·푸시·배포를 수행하지 않습니다. 다른 UI 비교 채팅의 홈 통계 카드 통합은 독립 작업이며, T26 최종 검증 후 공유 파일 소유권을 넘깁니다.
 
 ## 새 채팅 인계 — 2026-10-03, T25
 
