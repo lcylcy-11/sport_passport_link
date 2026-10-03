@@ -41,7 +41,9 @@ async function login(page,email) {
   await expect(page.locator('.content[data-page="home"]')).toBeVisible();
 }
 async function route(page,name) {
-  await page.goto(`/#/${name}`);await expect(page.locator(`.content[data-page="${name}"]`)).toBeVisible();
+  await page.goto(`/#/${name}`);
+  const canonical = { profile: 'home', activity: 'matches', people: 'community', groups: 'community' }[name] || name;
+  await expect(page.locator(`.content[data-page="${canonical}"]`)).toBeVisible();
 }
 async function refresh(page) {
   await page.getByRole('button',{name:'새로고침',exact:true}).click();
@@ -49,7 +51,7 @@ async function refresh(page) {
 }
 async function noOverflow(page) {expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);}
 
-test('actual mobile signup → two-user matching → result/stamp → logout/login and shared persistence',async ({browser,page}) => {
+test('actual mobile signup → two-user matching → exercise record → logout/login and shared persistence',async ({browser,page}) => {
   const errors = [];page.on('pageerror',error => errors.push(error.message));
   await signup(page,'브라우저 모집자','browser-host@example.test');
   await page.locator('#note-form [name="note"]').fill('오늘 QA 한 줄');
@@ -65,26 +67,50 @@ test('actual mobile signup → two-user matching → result/stamp → logout/log
   await form.locator('[name="level"]').selectOption('입문');
   await form.locator('[name="description"]').fill('실제 브라우저 가입과 DB 저장 검증용');
   await form.locator('button[type="submit"]').click();
-  await expect(page.locator('.content[data-page="activity"]')).toBeVisible();
-  await expect(page.locator('[data-action="details"]',{hasText:'브라우저 QA 테니스'})).toBeVisible();
+  await expect(page.locator('.content[data-page="matches"]')).toBeVisible();
+  await expect(page.locator('.schedule-section [data-action="details"]',{hasText:'브라우저 QA 테니스'})).toBeVisible();
   const otherContext = await browser.newContext({viewport:{width:390,height:844}});
   const other = await otherContext.newPage();other.on('pageerror',error => errors.push(error.message));
   await signup(other,'브라우저 참여자','browser-player@example.test');
   await route(other,'matches');
-  await other.locator('[data-action="details"]',{hasText:'브라우저 QA 테니스'}).click();
+  await other.locator('.matching-search [data-action="details"]',{hasText:'브라우저 QA 테니스'}).click();
   await other.locator('[data-action="apply"]').click();
   await expect(other.locator('.backdrop')).toHaveCount(0);
   await refresh(page);
-  await page.locator('[data-action="details"]',{hasText:'브라우저 QA 테니스'}).click();
+  await page.locator('.schedule-section [data-action="details"]',{hasText:'브라우저 QA 테니스'}).click();
   await page.locator('[data-action="decide"][data-decision="accepted"]').click();
   await expect(page.locator('[data-action="decide"]')).toHaveCount(0);
   await page.locator('[data-action="result"]').click();
   await expect(page.locator('#result-form')).toBeVisible();
+  const proposalResponsePromise = page.waitForResponse(response => response.url().endsWith('/api/commands') && response.request().postDataJSON().type === 'result.save');
   await page.locator('#result-form button[type="submit"]').click();
-  await expect(page.locator('.celebrate')).toBeVisible();
-  await expect(page.locator('.celebrate')).toHaveCount(0);
+  const proposalResponse = await proposalResponsePromise;
+  expect(proposalResponse.status()).toBe(200);
+  const proposed = await proposalResponse.json();
+  const proposal = proposed.state.resultProposals.find(item => item.status === 'pending');
+  expect(proposal.participantIds).toHaveLength(2);
+  expect(proposal.approvedIds).toHaveLength(1);
+  expect(proposed.state.results.filter(item => item.matchId === proposal.matchId)).toHaveLength(0);
+  await expect(page.locator('.consensus-card')).toContainText('1/2명 승인');
+  await page.getByRole('button',{name:'닫기',exact:true}).click();
   await route(page,'profile');
-  await expect(page.locator('.stamp')).not.toHaveCount(0);
+  await expect(page.locator('.kong-profile')).toHaveAttribute('data-total','0');
+  await expect(page.locator('.kong-history .kong-log-row')).toHaveCount(0);
+  await other.reload();
+  await route(other,'matches');
+  await other.locator(`.schedule-section [data-action="details"][data-id="${proposal.matchId}"]`).click();
+  await expect(other.locator('.consensus-card')).toContainText('1/2명 승인');
+  const approvalResponsePromise = other.waitForResponse(response => response.url().endsWith('/api/commands') && response.request().postDataJSON().type === 'result.decide');
+  await other.getByRole('button',{name:'동의하고 확정',exact:true}).click();
+  const approvalResponse = await approvalResponsePromise;
+  expect(approvalResponse.status()).toBe(200);
+  expect((await approvalResponse.json()).state.results.filter(item => item.matchId === proposal.matchId)).toHaveLength(1);
+  await refresh(page);
+  await expect(page.locator('.content[data-page="home"]')).toBeVisible();
+  await expect(page.locator('.passport-flip')).toHaveAttribute('data-flipped','true');
+  await route(page,'profile');
+  await expect(page.locator('.kong-history .kong-log-row')).toHaveCount(1);
+  await expect(page.locator('.stamp,.celebrate')).toHaveCount(0);
   await noOverflow(page);
   await page.screenshot({path:'test-results/profile-390.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'프로필 카드 공유'}).click();
@@ -101,11 +127,12 @@ test('actual mobile signup → two-user matching → result/stamp → logout/log
   await login(page,'browser-host@example.test');
   await expect(page.locator('#note-form [name="note"]')).toHaveValue('오늘 QA 한 줄');
   await page.reload();await expect(page.locator('#note-form [name="note"]')).toHaveValue('오늘 QA 한 줄');
-  await route(other,'profile');await expect(other.locator('.stamp')).not.toHaveCount(0);
+  await other.reload();
+  await route(other,'profile');await expect(other.locator('.kong-history .kong-log-row')).toHaveCount(1);
   // Exercise all real entry points and inherited mobile constraints.
   for (const width of [320,390,1280]) {
     await page.setViewportSize({width,height:844});
-    for (const name of ['home','matches','activity','ranking','profile','people','groups','notifications']) {await route(page,name);await noOverflow(page);}
+    for (const name of ['home','matches','community','activity','ranking','profile','people','groups','notifications']) {await route(page,name);await noOverflow(page);}
   }
   expect(errors).toEqual([]);
   await otherContext.close();
@@ -122,7 +149,9 @@ test('account form validation, login failure, profile editing, group and friend 
   await route(page,'profile');await page.getByRole('button',{name:'프로필 편집'}).click();
   await page.locator('#profile-form [name="bio"]').fill('수정한 소개');
   await page.locator('#profile-form button[type="submit"]').click();
-  await page.reload();await expect(page.getByText('수정한 소개',{exact:true})).toBeVisible();
+  await page.reload();
+  await page.locator('.home-summary-details > summary').click();
+  await expect(page.getByText('수정한 소개',{exact:true})).toBeVisible();
   await page.locator('[data-action="logout"]').click();
   await page.locator('[name="email"]').fill('empty@example.test');
   await page.locator('[name="password"]').fill('wrong-browser-password');

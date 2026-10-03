@@ -7,11 +7,13 @@
     "start": "node --env-file-if-exists=.env dwnc-app/server.js",
     "db:migrate": "node --env-file-if-exists=.env backend/manage.js migrate",
     "db:seed": "node --env-file-if-exists=.env backend/manage.js seed",
-    "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js backend/integration.test.js",
+    "test": "node --test dwnc-app/clock.test.js dwnc-app/domain.test.js dwnc-app/extended-domain.test.js backend/integration.test.js backend/chat.test.js dwnc-app/collaboration-domain.test.js dwnc-app/chat-view.test.js dwnc-app/workout-share-data.test.js dwnc-app/kong-profile.test.js dwnc-app/kong-profile-view.test.js dwnc-app/passport-view.test.js dwnc-app/home-summary.test.js dwnc-app/service-model.test.js",
     "test:e2e": "playwright test",
     "typecheck": "tsc -p tsconfig.json",
     "build": "node scripts/build.mjs",
     "test:build": "node scripts/smoke-build.mjs",
+    "test:cloud": "node --test backend/cloud-store.test.js backend/demo-controls.test.js",
+    "build:cloud": "node scripts/build-cloud.mjs",
     "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
@@ -23,5 +25,7 @@
     "@types/node": "24.19.1",
     "typescript": "7.0.2"
   },
-  "engines": {"node": ">=24.15.0 <25"}
+  "engines": {
+    "node": ">=24.15.0 <25"
+  }
 }

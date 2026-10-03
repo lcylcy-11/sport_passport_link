@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
 import * as d from '../dwnc-app/extended-domain.js';
 import * as base from '../dwnc-app/domain.js';
+import * as c from '../dwnc-app/collaboration-domain.js';
+import { getRoom } from './chat.js';
 import { readState, writeState, transaction } from './database.js';
 
 export class ApiError extends Error {
@@ -19,6 +21,9 @@ const commonProfile = {
   avatar: z.enum(d.AVATARS), chosenSports: z.array(sport).min(1).max(3),
 };
 const schemas = {
+  'appointment.propose':z.strictObject({roomId:id,participantIds:ids,sport,title:text(60).min(1),region:text(30).min(1),venue:text(60).min(1),address:text(200).optional(),date:text(10),startTime:text(5),endTime:text(5),description:text(500),existingMatchId:id.optional(),replacesId:id.optional()}),
+  'appointment.decide':z.strictObject({proposalId:id,version:z.number().int().positive(),decision}),
+  'result.decide':z.strictObject({proposalId:id,version:z.number().int().positive(),decision}),
   'profile.update': z.strictObject({ ...commonProfile, sports: z.partialRecord(sport,sportsProfile) }),
   'profile.photo': z.strictObject({ photo: z.string().max(200000).nullable() }),
   'note.save': z.strictObject({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), text: text(140) }),
@@ -40,6 +45,7 @@ const schemas = {
   'invitation.decide': z.strictObject({ invitationId: id, decision: z.enum(['accepted','declined']) }),
   'notice.read': z.strictObject({ noticeId: id }), 'notice.readAll': z.strictObject({}),
 };
+schemas['result.propose']=schemas['result.save'];
 const envelope = z.strictObject({ type: z.enum(Object.keys(schemas)), payload: z.unknown(), revision: z.number().int().nonnegative(), requestId: z.string().uuid(), expectedUserId: id.optional() });
 
 export function ensureProfile(db, authUser) {
@@ -67,7 +73,11 @@ export function projectState(state, actorId) {
   view.notifications = view.notifications.filter(n => n.userId === actorId);
   view.dailyNotes = { [actorId]: view.dailyNotes[actorId] || {} };
   // Aggregate manner is public profile information; individual private ratings are not.
-  view.users = view.users.map(u => ({ ...u, publicManner: d.mannerFor(state,u.id) }));
+  view.users = view.users.map(u => ({ ...u, publicManner: d.mannerFor(state,u.id),publicMannerSummary:d.mannerSummaryFor(state,u.id) }));
+  view.resultProposals=(view.resultProposals||[]).filter(p=>p.participantIds.includes(actorId) && visible.has(p.matchId) && base.participants(base.getMatch(state,p.matchId)).includes(actorId));
+  view.appointmentProposals=(view.appointmentProposals||[]).filter(p=>
+    c.canAccessRoom(state,{kind:p.roomKind,groupId:p.groupId,participantIds:p.participantIds,matchId:p.details.existingMatchId},actorId) &&
+    (p.roomKind==='group' || p.participantIds.includes(actorId)));
   view.ratings = view.ratings.filter(r => r.fromId === actorId && visible.has(r.matchId));
   return view;
 }
@@ -95,6 +105,12 @@ export function executeCommand(db, actorId, input) {
     const { state, revision } = readState(db,actorId);
     if (command.revision !== revision) throw new ApiError(409,'다른 변경이 있습니다. 최신 내용을 불러온 뒤 다시 시도해 주세요.','REVISION_CONFLICT');
     if (p.matchId && !d.canViewMatch(state,base.getMatch(state,p.matchId),actorId)) throw new ApiError(404,'운동 자리를 찾을 수 없습니다.','NOT_FOUND');
+    if (['appointment.decide','result.decide'].includes(command.type)) {
+      const proposal=(command.type==='result.decide' ? state.resultProposals : state.appointmentProposals).find(item=>item.id===p.proposalId);
+      if (!proposal || !proposal.participantIds.includes(actorId)) throw new ApiError(404,'제안을 찾을 수 없습니다.','NOT_FOUND');
+      if (command.type==='result.decide' && !base.participants(base.getMatch(state,proposal.matchId)).includes(actorId)) throw new ApiError(404,'제안을 찾을 수 없습니다.','NOT_FOUND');
+      if (proposal.version!==p.version || ['superseded','invalid'].includes(proposal.status)) throw new ApiError(409,'제안이 변경되었습니다. 최신 내용을 확인한 뒤 다시 동의해 주세요.','PROPOSAL_CHANGED');
+    }
     let next, resultId = null;
     switch (command.type) {
       case 'profile.update': next = d.editProfile(state,actorId,p); break;
@@ -105,7 +121,11 @@ export function executeCommand(db, actorId, input) {
       case 'match.decide': next = d.decideMatchRequest(state,p.matchId,actorId,p.applicantId,p.decision); break;
       case 'match.withdraw': next = d.withdrawMatch(state,p.matchId,actorId); break;
       case 'match.cancel': next = d.cancelMatch(state,p.matchId,actorId); break;
-      case 'result.save': next = d.saveResult(state,p.matchId,actorId,p.data); break;
+      case 'result.save':
+      case 'result.propose': {const made=c.proposeResult(state,p.matchId,actorId,p.data); next=made.state; resultId=made.id; break;}
+      case 'result.decide': next=c.decideResult(state,p.proposalId,actorId,p.version,p.decision); break;
+      case 'appointment.propose': {const room=getRoom(db,state,actorId,p.roomId); const made=c.proposeAppointment(state,room,actorId,p); next=made.state; resultId=made.id; break;}
+      case 'appointment.decide': {const proposal=state.appointmentProposals.find(item=>item.id===p.proposalId); if(!proposal) throw new ApiError(404,'제안을 찾을 수 없습니다.','NOT_FOUND'); const room=getRoom(db,state,actorId,proposal.roomId); next=c.decideAppointment(state,room,p.proposalId,actorId,p.version,p.decision); break;}
       case 'rating.save': next = d.rateParticipant(state,p.matchId,actorId,p.targetId,p.value); break;
       case 'friend.request': next = d.sendFriendRequest(state,actorId,p.code); break;
       case 'friend.decide': next = d.decideFriendRequest(state,p.requestId,actorId,p.decision); break;
@@ -116,9 +136,9 @@ export function executeCommand(db, actorId, input) {
       case 'notice.read': next = d.markNoticeRead(state,p.noticeId,actorId); break;
       case 'notice.readAll': next = d.markAllNoticesRead(state,actorId); break;
     }
-    writeState(db,d.reconcileRequests(next));
+    writeState(db,c.reconcileProposals(d.reconcileRequests(next)));
     db.prepare('INSERT INTO command_receipts VALUES (?, ?, ?, ?, ?)').run(actorId,command.requestId,fingerprint,resultId,Date.now());
-    db.prepare('DELETE FROM command_receipts WHERE created_at < ?').run(Date.now()-7*24*60*60*1000);
+    db.prepare("DELETE FROM command_receipts WHERE created_at < ? AND fingerprint NOT LIKE 'demo:%'").run(Date.now()-7*24*60*60*1000);
     return { ...snapshot(db,actorId), id: resultId };
   });
 }

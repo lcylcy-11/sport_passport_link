@@ -1,0 +1,61 @@
+/* Original KDH ba8fe9c profile card, within the existing mobile canvas. */
+.passport-card[data-home-summary="true"]{position:relative;gap:0}
+.passport-card[data-home-summary="true"] .passport-front{padding:18px 16px 48px;gap:14px;border-radius:24px}
+.passport-card[data-home-summary="true"] .passport-face{min-height:0}
+.passport-card[data-home-summary="true"] .passport-face[aria-hidden="true"]{position:absolute;inset:0;width:100%;height:100%}
+.passport-card[data-home-summary="true"] .passport-face[aria-hidden="false"]{position:relative}
+.passport-card[data-home-summary="true"] .passport-flip-btn{position:absolute;right:16px;bottom:8px;z-index:2;order:0;min-height:40px;padding:6px 0;border:0;background:transparent;box-shadow:none;font-size:11px;font-weight:500;color:var(--ink2);gap:4px}
+.passport-card[data-home-summary="true"] .passport-flip-btn:before{content:'↻';font-size:16px}
+.passport-card[data-home-summary="true"] .passport-flip-btn[aria-pressed="true"]{background:transparent;color:var(--ink2)}
+.home-summary{display:grid;gap:16px;min-width:0}
+.home-summary-label{min-height:24px;display:flex;align-items:center;padding-right:106px}
+.home-summary-label p{font-size:12px;font-weight:600}
+.passport-card[data-home-owner="false"] .home-summary-label{padding-right:0;justify-content:space-between;gap:8px}
+.home-summary-identity{display:flex;gap:14px;align-items:center;min-width:0;padding-bottom:2px}
+.home-summary-photo{position:relative;width:76px;height:76px;flex:0 0 76px;display:grid;place-items:center;border-radius:50%;border:1px solid #ffffffd0;background:#ffffff80;box-shadow:inset 0 2px 4px #fff,0 4px 16px #687f8f12,0 0 0 6px #ffffff25;overflow:hidden}
+.home-summary-photo svg{display:block;width:76px;height:76px;padding:4px}
+.home-summary-photo img{display:block;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.home-summary-person{min-width:0;flex:1}
+.home-summary-name{font-size:23px;font-weight:600;line-height:1.3;letter-spacing:-.7px;overflow-wrap:anywhere}
+.home-summary-meta{display:flex;flex-wrap:wrap;gap:5px 12px;margin:6px 0;min-width:0}
+.home-summary-meta>div{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;min-width:0}
+.home-summary-meta dt{font-size:10px;color:var(--ink2);font-weight:500}
+.home-summary-meta dd{margin:0;font-size:11px;font-weight:500;overflow-wrap:anywhere}
+.home-summary .passport-manner{margin:0;padding:0;border:0}
+.home-summary .passport-manner-label{display:none}
+.home-summary .passport-manner-summary{margin:0;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.home-summary .passport-manner-stars{font-size:12px}
+.home-summary .passport-manner-value{font-size:10px}
+.home-summary-sports{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none;min-width:0}
+.home-summary-sports>li{min-width:0;padding:12px 10px;border:1px solid #ffffffc0;border-radius:15px;background:#ffffffa0;box-shadow:inset 0 1px 0 #fff,0 4px 14px #5c73820a}
+.home-summary-sports h3{font-family:Impact,Haettenschweiler,"Arial Narrow",sans-serif;font-size:18px;font-weight:400;letter-spacing:.025em;line-height:1.1;margin-bottom:18px;color:#708f77}
+.home-summary-sports [data-home-sport="tennis"] h3{color:#a89958}
+.home-summary-sports [data-home-sport="running"] h3{color:#7494ad}
+.home-summary-sports dl{display:grid;gap:10px;margin:0}
+.home-summary-sports dl>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:4px;min-width:0}
+.home-summary-sports dt{font-size:10px;color:var(--ink2);line-height:1.5}
+.home-summary-sports dd{margin:0;text-align:right;font-size:20px;line-height:1.2;font-weight:500;letter-spacing:-.7px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.home-summary-sports dd small{margin-left:2px;font-size:10px;font-weight:500;letter-spacing:0;color:var(--ink2)}
+.home-summary-sports dl>div:first-child:not(:last-child) dd{font-size:14px;letter-spacing:-.3px}
+.home-summary-details{margin:0;min-width:0}
+.home-summary-details>summary{position:absolute;top:10px;right:16px;min-height:40px;display:flex;align-items:center;gap:3px;font-size:10px;color:var(--ink2);cursor:pointer;list-style:none}
+.home-summary-details>summary::-webkit-details-marker{display:none}
+.home-summary-details>summary:after{content:'›';font-size:16px}
+.home-summary-details[open]>summary:after{content:'⌄'}
+.home-summary-details-content,.home-summary-public-details{display:flex;flex-direction:column;gap:14px;padding-top:14px;border-top:1px solid var(--line)}
+.home-summary-public-details .passport-sports{gap:6px}
+.home-summary-public-details .passport-sport{min-height:48px;border-radius:14px}
+.home-summary-public-details .passport-total{margin:0}
+.home-summary-demo{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:2px}
+.home-summary-demo .btn{min-height:40px;font-size:11px}
+.home-summary-demo .text-btn{font-size:11px;min-height:40px}
+.passport-card[data-home-summary="true"] .kong-title{font-size:24px;margin-top:8px}
+.passport-card[data-home-summary="true"] .kong-cta{margin-top:10px}
+.passport-card[data-home-summary="true"] .kong-orb-stage{height:156px;max-width:224px;margin-top:8px}
+.passport-card[data-home-summary="true"] .kong-glass-orb{width:174px}
+.passport-card[data-home-summary="true"] .kong-note{margin-bottom:10px}
+.passport-card[data-home-summary="true"] .kong-stat-strip{padding:10px 6px}
+.passport-card[data-home-summary="true"] .kong-stat-strip dd{font-size:21px}
+.passport-card[data-home-summary="true"] .passport-back .kong-hero{padding-bottom:48px}
+@media(max-width:359px){.passport-card[data-home-summary="true"] .passport-front{padding:16px 12px 48px}.home-summary-identity{gap:10px}.home-summary-photo{width:64px;height:64px;flex-basis:64px}.home-summary-photo svg{width:64px;height:64px}.home-summary-name{font-size:20px}.home-summary-sports{gap:5px}.home-summary-sports>li{padding:11px 7px}.home-summary-sports h3{font-size:17px}.home-summary-sports dd{font-size:18px}.home-summary-sports dd small{margin-left:1px;font-size:9px}.home-summary-meta{gap:4px 8px}.home-summary-meta dt,.home-summary-meta dd{font-size:10px}.home-summary-label p{font-size:11px}.home-summary-details>summary{right:12px}}
+@media(prefers-reduced-transparency:reduce){.home-summary-sports>li{background:rgba(248,249,249,.96)}}

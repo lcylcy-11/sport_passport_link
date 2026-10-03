@@ -1,5 +1,5 @@
 import test, { mock } from 'node:test';
-mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-30T10:00:00') });
+mock.timers.enable({ apis: ['Date'], now: new Date('2026-09-30T10:00:00+09:00') });
 import assert from 'node:assert/strict';
 import * as v1 from './domain.js';
 import * as d from './extended-domain.js';
@@ -119,7 +119,7 @@ test('doubles teams cannot overlap; score and attendance drive only present play
   assert.equal(d.validateV2(state), true);
 });
 
-test('absent users get no futsal/running stats or MVP/rating rights; manner blends baseline with peer ratings', () => {
+test('absent users get no futsal/running stats or MVP/rating rights; manner averages actual peer ratings', () => {
   let state = d.createExtendedSeed(day);
   const made = d.makeMatch(state, 'minseo', { ...matchData, sport: 'futsal', format: 'team', capacity: 3 }, day); state = made.state;
   for (const id of ['jihun', 'sua']) { state = d.requestMatch(state, made.id, id); state = d.decideMatchRequest(state, made.id, 'minseo', id, 'accepted'); }
@@ -128,7 +128,7 @@ test('absent users get no futsal/running stats or MVP/rating rights; manner blen
   assert.equal(d.statsFor(state, 'sua').futsal.games, 0);
   error(() => d.rateParticipant(state, made.id, 'sua', 'jihun', 5), '실제 함께 운동한 다른 참가자에게 1~5점을 남길 수 있습니다.');
   state = d.rateParticipant(state, made.id, 'minseo', 'jihun', 5);
-  assert.equal(d.mannerFor(state, 'jihun'), Math.round((4.8 * 5 + 5) / 6 * 10) / 10);
+  assert.equal(d.mannerFor(state, 'jihun'), 5);
   error(() => d.rateParticipant(state, made.id, 'minseo', 'jihun', 4), '이미 이 참가자를 평가했습니다.');
   const running = d.makeMatch(state, 'minseo', { ...matchData, sport: 'running', format: 'crew', capacity: 3 }, day); state = running.state;
   for (const id of ['jihun', 'sua']) { state = d.requestMatch(state, running.id, id); state = d.decideMatchRequest(state, running.id, 'minseo', id, 'accepted'); }
@@ -207,14 +207,14 @@ test('completed and cancelled matches close pending applications and invitations
 });
 
 test('eligibility shares exact end-time boundary across listing, requests, accept and invitations', () => {
-  const before = new Date('2026-09-30T20:59:00'), end = new Date('2026-09-30T21:00:00');
+  const before = new Date('2026-09-30T20:59:00+09:00'), end = new Date('2026-09-30T21:00:00+09:00');
   const { state, id } = d.makeMatch(d.createExtendedSeed(day), 'minseo', matchData, day);
   const item = state.matches.find(m => m.id === id);
   assert.equal(d.canRequestMatch(state, item, 'jihun', before), true);
   assert.equal(d.canRequestMatch(state, item, 'minseo', before), false);
   assert.equal(d.filterMatches(state, 'jihun', {openOnly:true}, end).some(m => m.id === id), false);
   assert.throws(() => d.requestMatch(state, id, 'jihun', end), {name:'DomainError'});
-  assert.throws(() => d.requestMatch(state, id, 'jihun', new Date('2026-10-01T00:00:00')), {name:'DomainError'});
+  assert.throws(() => d.requestMatch(state, id, 'jihun', new Date('2026-10-01T00:00:00+09:00')), {name:'DomainError'});
   const pending = d.requestMatch(state, id, 'jihun', before);
   assert.equal(d.canRequestMatch(pending, pending.matches[0], 'jihun', before), false);
   assert.throws(() => d.decideMatchRequest(pending, id, 'minseo', 'jihun', 'accepted', end), {name:'DomainError'});
@@ -250,6 +250,8 @@ test('multi-sport identity keeps per-sport metrics and combines only session cou
 test('match fit chips explain relationship, level and host manner without exposing more than three', () => {
   const state = d.createExtendedSeed(day);
   const open = state.matches.find((m) => m.id === 'today-open-tennis');
+  assert.equal(d.matchFit(state, open, 'minseo').some(chip => chip.kind === 'manner'), false);
+  state.ratings.push({matchId:'morning-run',fromId:'minseo',toId:'sua',value:5});
   const fit = d.matchFit(state, open, 'minseo');
   assert.deepEqual(fit.map((chip) => chip.kind), ['group', 'level', 'manner']);
   assert.equal(fit[0].text, '같은 그룹 · 함께 1회');

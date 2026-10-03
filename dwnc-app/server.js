@@ -7,9 +7,11 @@ import { openDatabase, migrateSports } from '../backend/database.js';
 import { createAuth } from '../backend/auth.js';
 import { ApiError, ensureProfile, snapshot, executeCommand } from '../backend/commands.js';
 import { DomainError } from './domain.js';
+import { listRooms,openRoom,listMessages,sendMessage } from '../backend/chat.js';
+import { demoSnapshot, executeDemoRecords } from '../backend/demo-controls.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const staticFiles = new Set(['index.html','app.css','app.js','api.js','domain.js','extended-domain.js','icons.js','cards.js','favicon.svg']);
+const staticFiles = new Set(['index.html','app.css','app.js','api.js','clock.js','domain.js','extended-domain.js','collaboration-domain.js','chat-view.js','chat.css','workout-share-data.js','icons.js','cards.js','favicon.svg','kong.js','kong-profile.js','kong-profile-view.js','kong-profile.css','passport-view.js','service-model.js','service-glass.css','home-summary.js','home-summary.css']);
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
 
 const json = (response,status,body) => { response.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}); response.end(JSON.stringify(body)); };
@@ -56,9 +58,16 @@ export async function createApplication({ databasePath = process.env.DATABASE_PA
         const session = await auth.api.getSession({headers:fromNodeHeaders(request.headers)});
         if (!session) throw new ApiError(401,'로그인이 필요합니다.','UNAUTHENTICATED');
         ensureProfile(db,session.user);
-        if (url.pathname === '/api/state' && request.method === 'GET') { json(response,200,snapshot(db,session.user.id)); return; }
+        if (url.pathname === '/api/state' && request.method === 'GET') { json(response,200,demoSnapshot(db,session.user.id)); return; }
+        if (url.pathname === '/api/demo/records' && request.method === 'POST') { json(response,200,executeDemoRecords(db,session.user.id,await readJson(request))); return; }
+        if(url.pathname==='/api/chats' && request.method==='GET') {json(response,200,listRooms(db,session.user.id)); return;}
+        if(url.pathname==='/api/chats/open' && request.method==='POST') {json(response,200,openRoom(db,session.user.id,await readJson(request))); return;}
+        const chatPath=/^\/api\/chats\/([^/]+)\/messages$/.exec(url.pathname);
+        if(chatPath && request.method==='GET') {json(response,200,listMessages(db,session.user.id,decodeURIComponent(chatPath[1]),Object.fromEntries(url.searchParams))); return;}
+        if(chatPath && request.method==='POST') {json(response,200,sendMessage(db,session.user.id,decodeURIComponent(chatPath[1]),await readJson(request))); return;}
         if (url.pathname === '/api/commands' && request.method === 'POST') {
-          json(response,200,executeCommand(db,session.user.id,await readJson(request))); return;
+          const result = executeCommand(db,session.user.id,await readJson(request));
+          json(response,200,{...result,...(demoSnapshot(db,session.user.id).demoControls ? {demoControls:true} : {})}); return;
         }
         throw new ApiError(404,'요청한 기능을 찾을 수 없습니다.','NOT_FOUND');
       }

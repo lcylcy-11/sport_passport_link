@@ -1,0 +1,12 @@
+.env*
+data/
+.runtime/
+node_modules/
+dist/
+test-results/
+playwright-report/
+source-snapshot.json
+**/*.test.js
+**/*.rej
+e2e/
+docs/
