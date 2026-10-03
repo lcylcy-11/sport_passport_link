@@ -434,6 +434,12 @@ legend .ic { width: 15px; height: 15px; color: var(--ink3); }
 .host small { display: flex; align-items: center; gap: 3px; font-size: 13px; font-weight: 700; color: var(--ink2); }
 .host small .ic { width: 14px; height: 14px; color: #d8a11e; }
 .desc { margin-top: 12px; font-size: 15px; line-height: 1.6; color: var(--ink2); }
+.sheet .desc { overflow-wrap: anywhere; }
+@media (max-width: 359px) {
+  .sheet > .sheet__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sheet > .sheet__actions > .btn { min-width: 0; white-space: normal; }
+  .sheet > .sheet__actions > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
 .result-box { display: flex; align-items: center; gap: 10px; margin-top: 18px; padding: 14px 16px; border-radius: 16px; background: #dcefd0; color: #24561a; animation: drop .4s var(--ease); }
 .result-box > .ic { width: 22px; height: 22px; stroke-width: 2.6; }
 .result-box strong { font-size: 18px; font-weight: 900; flex: 1; }

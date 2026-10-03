@@ -1,8 +1,8 @@
 # DWNC current state
 
-- Updated: 2026-10-04, T33 approved main integration prepared and focused checks passed
-- Writer now: none (T33 merge prepared; remote publication/readback is the remaining operation)
-- Latest QA: T32 LOCAL PASS: 147 Node tests (132 check + 15 cloud), strict auth/API typecheck, 26 Chromium journeys, local/cloud builds and build smoke; 320/390/1280px inspected. npm audit reports 0 known advisories. Current production is unchanged and its T30 limitations are historical live evidence, not a claim that these local fixes are deployed.
+- Updated: 2026-10-04, T34 recovery/detail fixes complete (local only)
+- Writer now: none (T34 complete; local feature commit recorded in completion evidence)
+- Latest QA: T34 LOCAL PASS: 152 Node tests (137 check + 15 cloud), strict auth/API typecheck, 35 Chromium journeys, local/cloud builds and built artifact smoke. 320/390/1280px inspected. No final failing check. Physical/Safari/live Supabase remain UNVERIFIED. No T34 publication or deployment.
 - Checkpoint: DESKTOP-M0E3KIU isolated sport_passport_link checkout, local main merges original main f4f1e5d with verified desktop improvement 11ce0ca. Both histories and all main formatting changes preserved. Final published SHA/readback are recorded in .runtime/review/main-publication.json and the completion response.
 - Latest authorization 2026-10-03 (T29): user explicitly requested Vercel deployment, final integration/update and Supabase connection, and specifically approved storing the sport_pass project's anon/service_role keys as server-only Secret variables in lcy3/beanifit-dwnc. Earlier entries saying deployment was unapproved describe their historical scope.
 - User decision 2026-10-03 (after T20): **light theme** of `g/` is the chosen UI direction; mascot is **콩 v3** (`g/kong.js`): hand-drawn wobbly outline with slow line boil, solid black eyes, growth as age 아기(pacifier)→꼬마(bib)→어린이(band-aid)→청소년(headband)→어른(brows, flower)→베테랑(medal, pods) at 1/5/15/30/50/100, condition 4 levels, item Lv 1–4. Idle motion is subtle; tap/record plays one big reaction. g/ now defaults to light. Work is handed to Codex. T15–T20 files under `design-preview/passport-20261003/` are still uncommitted local files. Integration into `dwnc-app/` was subsequently approved for Tasks 1–4; T25 now authorizes app commit/push, while deployment remains unapproved.
@@ -14,6 +14,22 @@
 - User decision 2026-10-03: use the backend/database branch as the source of truth; `sport_passport_link` is the repository for all future work. Preserve the old repository without using it as the working remote.
 - AI work: T24 final checks PASS (70 Node tests, strict auth/API typecheck, 13 Chromium journeys, 25-file build and build smoke). Physical devices and Safari remain separate; numerical growth and ranking weights remain preview policies.
 
+
+## T34 five approved fixes — scope and finish
+
+- User approved all five reproduced followup findings. Baseline aa092ac; branch codex/recovery-detail-fixes on DESKTOP-M0E3KIU. Fix signup recovery across reload, narrow detail actions, chat 401 login return, long description wrap, and Escape after failed chat open. Preserve home design.
+- Latest scope: local implementation, targeted real-browser regression for each finding, one final project verification and local commit. No new public push/main merge/deployment; T33 approval applied only to the previous change.
+- Signup recovery stores only account-bound setup fields in tab session storage, excludes password/email/tokens, expires automatically, and clears on completion/account change/logout. Test blocked storage and stale-owner isolation. Disposable test DBs/accounts only; existing env/data unchanged.
+- Additional latest authorization: continue important existing-app boundary review and fix reproduced issues until completion without additional approval; no new features/services/infrastructure/public writes. Bounded completion reached: no remaining important reproduced defect within reviewed flows.
+- FIXED: failed signup profile setup survives reload for the authenticated owner in tab-local session storage (24h expiry; credential fields excluded). Successful/newer profile, logout, expiry and changed owner discard recovery. Storage-denied mode keeps in-page retry and clearly describes reload limitation. No auth/DB schema change.
+- FIXED: direct detail action bars fit 320px using a narrow two-column layout with final odd action spanning the row; 390px and centered desktop mobile canvas retain existing style. Group/workout descriptions wrap unbroken URL text. Home design/components/assets unchanged.
+- FIXED: chat poll/open/send/history 401 routes through app auth recovery; old-account late replies cannot sign out a new account and room-only 403 does not force logout. Failed chat open keeps its modal valid until success, retaining Escape/focus handling.
+- PASS: npm run check once after source changes (syntax, strict typecheck, 137/137 Node tests, 36 selected-file local build); test:cloud 15/15; full test:e2e 35/35 once (2.8m); build:cloud 24 public allowlisted assets; test:build PASS. Source/local/cloud copies of all changed browser assets match exactly. Dependencies/lockfile unchanged; previous dependency audit still applies.
+- PASS boundaries: real-browser signup failure/reload and one-account retry; different owner/newer profile; denied storage; initial state outage; expired/revoked session before opening and during active chat; normal cancel/keep/back; failed-open Escape and retry; duplicate message submit; browser back restores draft and live polling. Full existing journeys cover private-room/result ACL, origin/session guards, result consent/replay, database restart, profile/card and other main flows.
+- Visual PASS: reviewed actual Chromium screenshots at 320/390/1280; detail buttons and long URL descriptions stay within sheet width, main nonhome screens retain selected light glass and centered max-390px canvas. Final PNGs/logs copied under .runtime/review/followup/final-* and final-ui/. Before review findings/measurements are retained there. Final acceptance status is FINAL-RESULT.json.
+- Test development: first focused run had a test navigation issue (same unchanged hash after closing a modal) and an added history probe initially used the wrong selector (.nav instead of .tabbar). Corrected the probes; these were harness failures. All final project checks passed; no unresolved test failure.
+- UNVERIFIED: physical devices, Safari, production Supabase/Auth and live deployment; no production credentials/data were used. BLOCKED: none for the authorized local task. Publication/merge/deployment remains outside this turn; main remains aa092ac. Original sport_passport checkout/remote/worktree preserved clean.
+- Local feature commit/evidence records completion; writer released. Rollback by reverting only the T34 local commit.
 
 ## T33 user-approved main integration — 2026-10-04
 

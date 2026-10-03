@@ -5,6 +5,31 @@ import { createChatController } from './chat-view.js';
 const room = { id: 'room-one', kind: 'group', title: '같이 운동', groupId: 'group-one', participantIds: ['a', 'b', 'c'] };
 const fixture = () => ({ activeUserId: 'a', users: [{ id: 'a', name: '나', region: '서울' }, { id: 'b', name: '친구' }, { id: 'c', name: '셋째' }], groups: [{ id: 'group-one', memberIds: ['a', 'b', 'c'] }], matches: [], appointmentProposals: [], resultProposals: [] });
 const button = data => ({ dataset: data });
+test('401 from poll, open or send recovers authentication; room-only 403 does not', async () => {
+  for (const source of ['poll', 'open', 'send', 'forbidden']) {
+    let current = fixture(), denied = false, recovered = 0;
+    const chat = controller({ getState: () => current, onUnauthorized: async () => { recovered++; current = null; }, request: async (path, payload) => {
+      if (denied) throw Object.assign(new Error('denied'), { status: source === 'forbidden' ? 403 : 401 });
+      return path === '/api/chats' ? {rooms:[room]} : payload ? {room} : {messages:[]};
+    } });
+    chat.setRoom(room.id); const dom = surface(); await chat.mount(dom.root);
+    denied = true;
+    if (source === 'open') await chat.open({kind:'group',groupId:room.groupId});
+    else if (source === 'send') await chat.handleSubmit({id:'chat-message-form',elements:{namedItem:()=>({value:'test'})},querySelector:()=>null});
+    else await chat.mount(dom.root);
+    assert.equal(recovered, source === 'forbidden' ? 0 : 1);
+    if (source !== 'forbidden') assert.equal(chat.render(), '');
+    chat.dispose();
+  }
+});
+test('a late 401 from an old account cannot sign out the current account', async () => {
+  let current = fixture(), reject, recovered = 0;
+  const chat = controller({getState:()=>current,onUnauthorized:async()=>{recovered++;},request:()=>new Promise((resolve, fail)=>{reject=fail;})});
+  const pending = chat.open({kind:'group',groupId:room.groupId});
+  current = {...current,activeUserId:'b'}; chat.render();
+  reject(Object.assign(new Error('expired'),{status:401})); await pending;
+  assert.equal(recovered,0); chat.dispose();
+});
 function surface() {
   const lane = { innerHTML: '', scrollTop: 18, scrollHeight: 1000, clientHeight: 300 };
   const composer = { value: '작성하던 메시지', selectionStart: 4, selectionEnd: 4 };

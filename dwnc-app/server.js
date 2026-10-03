@@ -11,7 +11,7 @@ import { listRooms,openRoom,listMessages,sendMessage } from '../backend/chat.js'
 import { demoSnapshot, executeDemoRecords } from '../backend/demo-controls.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const staticFiles = new Set(['index.html','app.css','app.js','api.js','clock.js','domain.js','extended-domain.js','collaboration-domain.js','chat-view.js','chat.css','workout-share-data.js','icons.js','cards.js','favicon.svg','kong.js','kong-profile.js','kong-profile-view.js','kong-profile.css','passport-view.js','service-model.js','service-glass.css','home-summary.js','home-summary.css']);
+const staticFiles = new Set(['index.html','app.css','app.js','api.js','clock.js','domain.js','extended-domain.js','collaboration-domain.js','chat-view.js','signup-recovery.js','chat.css','workout-share-data.js','icons.js','cards.js','favicon.svg','kong.js','kong-profile.js','kong-profile-view.js','kong-profile.css','passport-view.js','service-model.js','service-glass.css','home-summary.js','home-summary.css']);
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
 
 const json = (response,status,body) => { response.writeHead(status,{'Content-Type':'application/json; charset=utf-8'}); response.end(JSON.stringify(body)); };
