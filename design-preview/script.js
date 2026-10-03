@@ -1,3 +1,4 @@
+
 const tabs = [...document.querySelectorAll('.comparison__tab')];
 const panels = [...document.querySelectorAll('.concept')];
 const shell = document.getElementById('preview-shell');

@@ -1,3 +1,4 @@
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSeed, createMatch, applyToMatch, decideApplication, recordResult, statsFor, ranking, activityFor, filterMatches, openSeats, switchUser, updateProfile, validateState } from './domain.js';

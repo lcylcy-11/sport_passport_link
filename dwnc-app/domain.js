@@ -1,3 +1,4 @@
+
 export const SPORTS = ['tennis', 'futsal', 'running'];
 export const SPORT_LABEL = { tennis: '테니스', futsal: '풋살', running: '러닝' };
 export const LEVELS = ['입문', '초급', '중급', '상급', '무관'];
