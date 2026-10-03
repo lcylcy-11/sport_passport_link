@@ -472,7 +472,7 @@ function render() {
     root.innerHTML = `<main class="recovery">${ic('alert')}<h1>기록을 불러오지 못했어요</h1><p>${esc(loadError)}</p><button class="btn primary" data-action="reload-state">${ic('refresh')}다시 시도</button></main>`;
     return;
   }
-  if (!state) { document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; return; }
+  if (!state) { document.body.classList.remove('dialog-open'); root.innerHTML = authPage(); document.title = 'DWNC · 로그인'; document.querySelector('meta[name="theme-color"]').setAttribute('content', '#173d2b'); return; }
   const me = user(state.activeUserId);
   const page = route();
   if (page !== 'home' || lastPage !== 'home') homeProfileFlipped = false;

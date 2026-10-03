@@ -1,7 +1,7 @@
 # DWNC current state
 
 - Updated: 2026-10-03, Codex T24 home review handoff
-- Writer now: Codex T24 (review branch and PR; single writer)
+- Writer now: none (T24 review handoff verified; writer released)
 - Checkpoint: T14 environment recovery verified. GitHub helper now uses the installed CLI; Node 24.19.0/npm 11.17.0 are on user PATH; the auth/SQLite server responds on 4174. T13 documentation is preserved and reconciled with the canonical backend branches in the T14 documentation commit.
 - User decision 2026-10-03: use the backend/database branch as the source of truth; `sport_passport_link` is the repository for all future work. Preserve the old repository without using it as the working remote.
 - AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff PASS (400798b read back). Human acceptance, physical devices and deployment are separate.
@@ -10,8 +10,10 @@
 
 - User explicitly requested GitHub handoff so the team lead can review and apply the accumulated home changes. Prepared codex/home-glass-kong-review from 150823a, the latest origin/main; no merge or deployment is authorized by this handoff.
 - Scope: T15–T23 home design, compact same-size flip card, temporary Kong/provider boundary, supporting static/build allowlists, regression tests and integration notes. Added docs/home-review/README.md with local review instructions. submit-before, credentials, runtime databases, local-only tooling and screenshots containing profile information are excluded.
-- Fresh verification: npm run check PASS (30/30 tests, syntax/typecheck/build), Chromium journeys PASS 2/2 (40.9s), npm run test:build PASS. GitHub API confirms main is the default branch and the existing account has push access. Code review and remote PR verification are pending.
+- Fresh verification: npm run check PASS (30/30 tests, syntax/typecheck/build), Chromium journeys PASS 2/2 (40.9s), npm run test:build PASS. Independent read-only review of 150823a..3ca7380 found no Critical/Important issues and one Minor auth theme-color leak. Confirmed the early auth return skipped the reset and restored the original auth color there; reran check PASS, journeys 2/2 PASS (45.2s), build smoke PASS.
 - Automatic approval review rejected the initial push because profile screenshots would become public. That push did not execute. The safer handoff excludes both screenshots from the tree and unpublished commit history; the implementation and local images remain preserved.
+- Pushed the clean review branch, read back its remote SHA and created open PR #1: https://github.com/lcylcy-11/sport_passport_link/pull/1 (base main). GitHub reports mergeable/clean. Read back all 15 PR file paths and confirmed only code/tests/docs/generated Kong assets, with no profile screenshots or runtime data. PR attached to this Codex task; browser panel opening requested. Team lead review/merge and teammate's final character/provider hookup remain human integration steps, not completed by this handoff.
+- Existing GitHub account/permissions reused through Git Credential Manager and GitHub API because gh is unavailable in this execution environment. Authorization was kept in process memory, never printed or written into repository files. No main merge, deployment, team chat or account changes. Final auth-theme follow-up is included in the same PR; writer released.
 
 ## T23 same-size home profile flip — 2026-10-03
 
