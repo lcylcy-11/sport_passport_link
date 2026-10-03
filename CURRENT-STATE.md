@@ -10,7 +10,7 @@
 
 - User designated the backend/database branch `codex/dwnc-backend-auth` as canonical, requested it be pushed to the new `sport_passport_link` repository, and retired `sport_passport` for future work. The old repository was left unchanged.
 - The verified branch was pushed to the new repository as both `main` and `codex/dwnc-backend-auth`. `HANDOFF.md` clone instructions now use the new repository.
-- On this machine, locked dependency install completed with Node 24.19.0. `npm run check`: PASS (27/27 tests, strict API-boundary typecheck and build); `npm run test:e2e`: PASS (2/2 Chromium journeys); `npm run test:build`: PASS. Local app returned HTTP 200 at `/` and `/api/health` on port 4175 because 4174 was occupied; existing listener was not stopped.
+- On this machine, locked dependency install completed with Node 24.19.0. `npm run check`: PASS (27/27 tests, strict API-boundary typecheck and build); `npm run test:e2e`: PASS (2/2 Chromium journeys); `npm run test:build`: PASS. The broader manual handoff demo remains incomplete; no additional E2E was run after the user asked to stop. Local app returned HTTP 200 at `/` and `/api/health` on port 4175 because 4174 was occupied; the session started here has been stopped, and the existing listener was not stopped.
 - Final remote configuration and read-back are pending; writer remains Codex until that completes.
 - User decision 2026-10-03: profile uses a passport-like format, but it is not named a passport ("여권 형식인거지 이름을 여권으로 하는건 아님").
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
