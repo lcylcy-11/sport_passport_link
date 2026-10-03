@@ -1,16 +1,36 @@
 # DWNC current state
 
-- Updated: 2026-10-03, Claude Code
-- Writer now: none
+- Updated: 2026-10-03, Codex T11
+- Writer now: Codex (T11, isolated checkout codex/dwnc-backend-auth)
 - Checkpoint: T10 UI polish commit (resolve with `git log -1 -- dwnc-app/app.css`); T9 `ae3a8d9`, T8 `07518da`. Existing `submit-before/` remains unrelated and protected. Remote: `https://github.com/lcylcy-11/sport_passport` (private, pushed by user request 2026-10-03).
-- AI work: T10 UI polish PASS; T9, T8 PASS. No required AI work remains. Human visual/product acceptance and physical mobile devices UNVERIFIED. Release approval not requested.
+- AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff UNVERIFIED until read-back. Human acceptance, physical devices and deployment are separate.
 - User decision 2026-10-03: profile uses a passport-like format, but it is not named a passport ("여권 형식인거지 이름을 여권으로 하는건 아님").
 - User decision: A selected by user on 2026-09-30 (message “a”); latest request explicitly makes mobile the primary platform and authorizes audit fixes plus mobile optimization. No public release requested.
+
+## T11 implementation and handoff
+
+- Baseline: c5f4de9; clean clone, origin/main read-back matched. Existing desktop working copies are untouched.
+- Request: actual signup/login/logout/session, SQLite migrations and per-user APIs, existing UI integration; local tests and laptop handoff. User subsequently approved commit/push to a new branch only.
+- Acceptance: existing 24 domain tests; API allow/deny/validation/concurrency/persistence; browser signup → matching → result → logout/relogin, mobile checks; syntax/type/build; secret-safe handoff.
+- Boundaries: LOCAL only, fictional QA data; no external database, production accounts, paid services, deployment, main edits or force push. Recovery: switch to baseline in another clean checkout; preserve local DB with a backup.
+- Requested model: GPT-6.1 Sol High; runtime model/effort metadata UNVERIFIED. Single writer; no delegation needed for the shared domain/state/UI boundary.
+
+### T11 implementation evidence
+
+- No uncommitted changes at clone; origin/main HEAD read back as c5f4de9. No .agents/skills in this clone. Global service guidance and the original DWNC.md brief were read; current code and user authorization control scope. No memory_summary.md was found in the inspected local Codex paths; no unrelated session or credential content was read.
+- Done: Better Auth 1.7.7 signup/login/logout/server sessions and hash passwords; per-process dev secret without writing credentials; SQLite account/domain schema with FK/WAL, versioned migrations and non-destructive optional seed; server-owned profile/match/result/friend/group/invitation/notification/note commands; strict validation, same-origin checks, size limits, ownership/visibility projections, revision conflicts, expected-account guard and safe retry receipts.
+- UI: old A layout, sport rules, book/stamps and PNG retained; removed executable fake user-switch/reset; added signup/login, profile logout, manual refresh, pending/error/retry handling. Existing browser demo data and design-preview were not overwritten or imported.
+- Verification on Windows Node 24.19.0 / Chromium 153: npm run check PASS (27/27); npm run test:e2e PASS (2/2); npm run test:build PASS. Typecheck scope: strict auth setup and browser API boundary, not a full legacy JS-to-TS rewrite. API tests exercise allow/deny, credential hashing, expiry/logout, Origin/invalid payloads/private data, concurrent revision conflict, duplicate retries, persistent restart and migration/seed safety. Browser: signup → two accounts → create/apply/accept/result/stamp → logout/login/refresh; profile/group/edit/error retry and actual 1200x630 PNG download; 8 routes at 320/390/1280, no pageerror/overflow. Screenshot test-results/profile-390.png visually inspected locally; outputs ignored.
+- Fixed during QA: long-name top-bar overflow (logout moved to profile), signup mode surviving logout, stale cross-tab account writes, migration startup/close synchronization. No new visual direction or sport was introduced.
+- Runtime entry: npm start, http://127.0.0.1:4174/#/home; GET / and /api/health read back 200. Laptop uses feature-branch clone + npm ci + npm start. HANDOFF.md includes two-account demo, env/migration/seed and backup boundaries; historical main demo script is marked in HACKATHON-PREP.md.
+- Remaining: external DB/real accounts/deployment UNVERIFIED and not performed; email verification/reset/deletion/production review remain a separate task; manual refresh and global revisions are documented limits; physical phones/human visual acceptance UNVERIFIED. Source model/effort requested GPT-6.1 Sol High, execution metadata unavailable (UNVERIFIED), no subagents.
+- Stop condition: record verified feature commit, push only codex/dwnc-backend-auth under the added user approval, read back remote; release writer. Do not change main, deploy, create external credentials or start a new feature.
 
 ## Requests and finite finish line
 
 | ID | User request / acceptance | Owner | Status | Evidence |
 |---|---|---|---|---|
+| T11 | Actual auth + shared SQLite backend + per-user permissions + frontend + tested laptop handoff; approved feature-branch commit/push | Codex | PASS (local); GitHub handoff UNVERIFIED | 27/27 tests, 2/2 real Chromium journeys, typecheck/build/smoke; HANDOFF.md. Remote read-back pending |
 | T1 | Implement the DWNC brief: demo users, profiles, tennis/futsal/running, filter/create/apply/accept, results, today dashboard, ranking | design_preview → Codex Main integration | PASS | Local app at `http://127.0.0.1:4174/#/home`; final syntax and 7/7 domain tests PASS. Main's real browser critical journeys, all five pages at 390px, refresh, history, and console checks PASS. Human product acceptance is separate. |
 | T2 | Make three design drafts for the user to compare and decide | design_preview → Codex Main | PASS | Three drafts render at `http://127.0.0.1:4173/#a`, `#b`, `#c`. Syntax, desktop and mobile viewing, mouse/keyboard switching, direct hash navigation and toggle read-back PASS. User selected A. |
 | T3 | Complete local profile/community flows: demo onboarding, chosen sports/avatar, friend code and requests, exercise invitations, groups/join/members/schedule/records/ranking, in-app notifications | design_preview → Codex Main | PASS | Main real browser: edited v1 migration, demo onboarding, photo persistence, friend request/accept, visibility, invitations, group create/join/schedule/records, notifications and all eight routes at 390px. Domain tests PASS. Commit `390be03`. |
@@ -124,7 +144,7 @@ T7 implementation and local verification PASS. No required AI task remains. T6 f
 - Official alternatives: Plab Football, Strava, BAND. Strava official documentation directly opened; Plab/BAND official-domain search text available but direct fetch denied. No market/user-count claims inferred.
 - First-pass audit: PASS as a bounded evidence-backed deliverable; implementation rework: 0 (not authorized). Cost/usage and model comparison UNVERIFIED. Human experience/product acceptance remains separate; release not requested.
 - Changed paths only `T6-AUDIT.md`, `CURRENT-STATE.md`. Screenshot evidence stored outside repo in the authorized visualization directory and linked in the report. Protected `submit-before/` and `design-preview/` untouched. Recovery: revert only the audit docs commit if required.
-- Writer now: none. Stop condition met after report/tracker verification and explicit-path commit; no automatic fixes, further audit, deployment or messages to another chat.
+- Writer now: Codex (T11, isolated checkout codex/dwnc-backend-auth). Stop condition met after report/tracker verification and explicit-path commit; no automatic fixes, further audit, deployment or messages to another chat.
 
 ## T3–T5 final integration evidence — 2026-09-30
 

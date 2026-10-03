@@ -335,6 +335,7 @@ export function rateParticipant(state, matchId, fromId, toId, value) {
 }
 export function mannerFor(state, userId) {
   const user = uid(state, userId); if (!user) return 0;
+  if (Number.isFinite(user.publicManner)) return user.publicManner;
   const values = state.ratings.filter((rating) => rating.toId === userId).map((rating) => rating.value);
   return Math.round((user.manner * 5 + values.reduce((sum, value) => sum + value, 0)) / (5 + values.length) * 10) / 10;
 }

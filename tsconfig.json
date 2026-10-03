@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "module": "NodeNext",
+    "target": "ES2023",
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["backend/auth.js", "dwnc-app/api.js"]
+}

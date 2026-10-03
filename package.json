@@ -1,11 +1,27 @@
 {
-  "name": "dwnc-local-demo",
+  "name": "dwnc-sports",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node dwnc-app/server.js",
-    "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js",
-    "check": "node --check dwnc-app/domain.js && node --check dwnc-app/extended-domain.js && node --check dwnc-app/app.js && node --check dwnc-app/icons.js && node --check dwnc-app/cards.js && node --check dwnc-app/server.js && npm test"
-  }
+    "start": "node --env-file-if-exists=.env dwnc-app/server.js",
+    "db:migrate": "node --env-file-if-exists=.env backend/manage.js migrate",
+    "db:seed": "node --env-file-if-exists=.env backend/manage.js seed",
+    "test": "node --test dwnc-app/domain.test.js dwnc-app/extended-domain.test.js backend/integration.test.js",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "test:build": "node scripts/smoke-build.mjs",
+    "check": "node scripts/check.mjs && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "better-auth": "1.7.7",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.1",
+    "typescript": "7.0.2"
+  },
+  "engines": {"node": ">=24.15.0 <25"}
 }

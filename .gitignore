@@ -6,3 +6,11 @@ dist/
 *.log
 .DS_Store
 design-preview/.runtime/
+data/
+.runtime/
+test-results/
+playwright-report/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
