@@ -1,10 +1,27 @@
 # DWNC current state
 
-- Updated: 2026-10-03, Codex T12 repository migration
+- Updated: 2026-10-03, Codex T14 environment and handoff recovery
 - Writer now: none
-- Checkpoint: T11 backend/auth/SQLite implementation on `codex/dwnc-backend-auth`; user designated it canonical and requested migration to `https://github.com/lcylcy-11/sport_passport_link`. The destination has `main` and `codex/dwnc-backend-auth`; handoff clone instructions now point there. Local verification is recorded under T12. Old `sport_passport` remains untouched and is retired for future work.
+- Checkpoint: T14 environment recovery verified. GitHub helper now uses the installed CLI; Node 24.19.0/npm 11.17.0 are on user PATH; the auth/SQLite server responds on 4174. T13 documentation is preserved and reconciled with the canonical backend branches in the T14 documentation commit.
 - User decision 2026-10-03: use the backend/database branch as the source of truth; `sport_passport_link` is the repository for all future work. Preserve the old repository without using it as the working remote.
 - AI work: T11 local implementation PASS (27/27 tests, 2/2 Chromium journeys, strict auth/API boundary typecheck, build smoke); approved new-branch GitHub handoff PASS (400798b read back). Human acceptance, physical devices and deployment are separate.
+
+## T14 environment and handoff recovery — 2026-10-03
+
+- User requested all four identified repairs: Git credential helper, npm availability, local server restart and uncommitted/stale handoff documentation. Single writer; existing T13 changes preserved.
+- `gh auth setup-git --hostname github.com` replaced deleted temporary helper paths for GitHub/gist with the installed `C:/Program Files/GitHub CLI/gh.exe`. Existing login remained valid; ordinary `git ls-remote origin` succeeded without per-command credential overrides. Canonical remote branches were both `eb15a14` when checked. No new account or token was created.
+- Installed official Node 24.19.0 Windows x64 ZIP with npm 11.17.0 under `%LOCALAPPDATA%/Programs/DWNC-Node-24.19.0/node-v24.19.0-win-x64`, verified against Node's published SHA-256 `57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73`, and prepended it to user PATH. Previous user PATH is backed up as `user-path-before.txt` beside the runtime. Existing terminals may need reopening/PATH refresh; HANDOFF includes the command.
+- Fresh verification using plain npm after loading machine/user PATH: Node 24.19.0, npm 11.17.0; `npm run check` PASS (27/27, strict boundary typecheck, build); `npm run test:e2e` PASS (2/2, 26.3s); `npm run test:build` PASS. Tests used isolated temporary DBs and already-installed Chromium; no new browser download.
+- Port 4174 had no listener. Started the current server as a hidden background process using the persistent Node path, PID 24696 at verification; logs are ignored in `data/`. `/` and `/api/health` returned 200 (`{"ok":true}`), anonymous auth session returned 200/null and `/api/state` returned 401. Existing user DB was preserved; no seed/account creation in it. Browser opening requested for `http://127.0.0.1:4174/#/home`.
+- README, HANDOFF, AGENTS and historical HACKATHON-PREP now distinguish canonical backend `main`/feature branches from the old browser demo at `c5f4de9`. Existing T13 documentation changes are included in the same local commit. No app code, protected project, remote branch, production account or deployment changed. Writer released after verification.
+
+## T13 local server recovery — 2026-10-03
+
+- Request: resolve the attached “기록을 불러오지 못했어요 / 요청을 완료하지 못했습니다.” screenshot. Single writer; no delegation.
+- Reproduced in the user's existing Chrome tab at `http://127.0.0.1:4174/#/home`. UI and current `api.js` returned 200, but `/api/health`, `/api/state`, and `/api/auth/get-session` all returned plain-text 404. Port ownership and command line identified PID 15472 running `node dwnc-app/server.js`: the previous static server remained in memory while updated client files required the new APIs.
+- Recovery: stopped only that verified DWNC process and started the current server with Node 24.19.0 and `--env-file-if-exists=.env` in this workspace. Local listener remains running on 4174 (PID 15672 at verification); ignored logs and screenshot are under `data/`. No application code, existing records or credentials were edited; no accounts were added to the user's DB and no deployment/push occurred.
+- Fresh verification: `/` 200; `/api/health` 200 with `{"ok":true}`; anonymous `/api/state` 401 with `UNAUTHENTICATED`; `/api/auth/get-session` 200 with null. The user's existing retry button opened the normal login screen, then brand navigation restored `#/home`. `node --test backend/integration.test.js`: 3/3 PASS; `node node_modules/@playwright/test/cli.js test`: 2/2 PASS using isolated temporary databases, including signup, two-user matching/results, relogin, persistence and server-error retry.
+- README now explains restarting the server after updates and distinguishing a stale static server's 404 from normal login-required 401. Local development sessions require login after restart; existing account/record persistence is preserved. Writer released; those documentation changes were initially uncommitted and are preserved in T14.
 
 ## T12 repository migration — 2026-10-03
 

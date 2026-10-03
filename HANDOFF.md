@@ -1,6 +1,6 @@
 # DWNC 노트북 인계
 
-기준: `c5f4de9`에서 분기한 `codex/dwnc-backend-auth`. `main`과 기존 데스크톱 작업 복사본은 변경하지 않습니다. 이 문서는 로컬 개발·해커톤 시연용이며 운영 배포 승인을 뜻하지 않습니다.
+정본 저장소는 `sport_passport_link`이며, `main`과 `codex/dwnc-backend-auth` 모두 실제 인증·SQLite 백엔드를 포함합니다. 이전 브라우저 데모는 과거 커밋 `c5f4de9`에 보존되어 있습니다. 이 문서는 로컬 개발·해커톤 시연용이며 운영 배포 승인을 뜻하지 않습니다.
 
 ## 팀원에게 소개
 
@@ -11,6 +11,14 @@
 ## 노트북에서 받기
 
 Node.js **24.15 이상, 24.x**와 Git이 필요합니다. 처음 패키지를 받을 때 인터넷이 필요하며 설치 후 앱은 외부 DB 없이 실행됩니다.
+
+이 데스크톱에는 Node 24.19.0과 npm을 `%LOCALAPPDATA%\Programs\DWNC-Node-24.19.0\node-v24.19.0-win-x64`에 설치하고 사용자 PATH에 등록했습니다. 설치 전에 연 터미널은 닫고 다시 여세요. Codex의 기존 터미널에 이전 PATH가 남으면 아래 명령으로 갱신할 수 있습니다. 새 노트북에서는 Node 24.x와 npm을 먼저 설치하세요.
+
+```powershell
+$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+node --version
+npm --version
+```
 
 새 폴더에서:
 
@@ -91,7 +99,7 @@ npm run test:e2e
 - 기존 공개 그룹은 자유 가입입니다. 친구 관계와 운동 공개 범위는 기존 규칙을 유지합니다. 랭킹·프로필 기록/도장은 **현재 사용자가 볼 수 있는 운동 기록**에 한정하며 타인의 비공개 운동은 내려보내지 않습니다.
 - SQLite 전체 도메인을 작은 로컬 데이터셋으로 읽고 갱신하는 방식입니다. 큰 서비스의 페이지네이션·쿼리 최적화는 하지 않았습니다.
 - 실제 iOS/Android 터치·키보드, 프로젝터와 사람의 시각적 선호: **UNVERIFIED**.
-- 이전 `localStorage` 데모 기록은 지우거나 서버에 자동 업로드하지 않습니다. `main`에서 기존 데모로 다시 확인할 수 있습니다.
+- 이전 `localStorage` 데모 기록은 지우거나 서버에 자동 업로드하지 않습니다. 과거 데모가 필요하면 별도 복사본에서 커밋 `c5f4de9`를 사용하세요. 현재 정본 저장소의 `main`도 인증·SQLite 버전입니다.
 
 ## 다음 소유자에게
 

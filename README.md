@@ -6,12 +6,16 @@
 
 Node.js **24.15 이상, 24.x**와 npm을 사용하세요.
 
+이 데스크톱에는 Node 24.19.0과 npm이 사용자 PATH에 등록되어 있습니다. 설치 전부터 열린 터미널은 다시 여세요. `npm`을 찾지 못하면 [HANDOFF.md](HANDOFF.md)의 PATH 갱신 절차로 `node --version`과 `npm --version`부터 확인하세요.
+
 ```powershell
 npm ci
 npm start
 ```
 
 **http://127.0.0.1:4174/#/home**에서 회원가입합니다. 서버는 로컬 `127.0.0.1`에만 바인딩합니다. 처음 의존성 설치 후에는 외부 DB나 API 없이 실행할 수 있습니다. 노트북 복제·두 계정 시연·검증 상세는 [HANDOFF.md](HANDOFF.md)에서 확인하세요.
+
+브랜치 변경·업데이트 전에 실행한 서버는 종료하고 `npm start`로 다시 시작하세요. 화면은 열리지만 “기록을 불러오지 못했어요”가 표시되고 `/api/health`가 404라면 이전 정적 서버가 포트를 점유한 상태입니다. 해당 DWNC 서버를 실행한 터미널에서 `Ctrl+C`로 종료한 뒤 현재 프로젝트에서 다시 실행하세요. 정상 서버의 `/api/health`는 200과 `{"ok":true}`를 반환하며, 로그인 전 `/api/state`의 401은 정상입니다.
 
 ## 실제 사용자 흐름
 
@@ -77,6 +81,6 @@ npm run test:build
 
 로컬 해커톤 MVP입니다. 이메일 소유 확인/메일/비밀번호 복구, 탈퇴·데이터 보존 정책, 외부 DB, 운영 배포, 운영 계정 및 실제 기기 검증은 포함하지 않았습니다. 외부 서비스·결제·제휴·추가 종목을 연결하지 않았습니다. 자유 가입 그룹과 운동 종료 전 결과 기록 같은 기존 MVP 규칙을 유지합니다.
 
-이전 브라우저 `localStorage` 데모 기록은 보존하며 자동으로 서버에 업로드하지 않습니다. 기존 사용자 전환·초기화 데모는 `main`에 남아 있습니다. 디자인 초안은 [design-preview/README.md](design-preview/README.md), 기존 데모 발표 자료는 [HACKATHON-PREP.md](HACKATHON-PREP.md), 현재 실제 계정 시연은 [HANDOFF.md](HANDOFF.md)를 참고하세요.
+이전 브라우저 `localStorage` 데모 기록은 보존하며 자동으로 서버에 업로드하지 않습니다. 기존 사용자 전환·초기화 데모는 과거 커밋 `c5f4de9`에 남아 있으며, 현재 `sport_passport_link`의 `main`과 `codex/dwnc-backend-auth`는 모두 실제 인증·SQLite 버전입니다. 디자인 초안은 [design-preview/README.md](design-preview/README.md), 기존 데모 발표 자료는 [HACKATHON-PREP.md](HACKATHON-PREP.md), 현재 실제 계정 시연은 [HANDOFF.md](HANDOFF.md)를 참고하세요.
 
 공식 기술 근거: [Better Auth 설치](https://better-auth.com/docs/installation), [SQLite 연결](https://better-auth.com/docs/adapters/sqlite), [이메일·비밀번호](https://better-auth.com/docs/authentication/email-password). 설치된 1.7.7의 export와 타입을 확인하여 Node SQLite 및 마이그레이션 API를 적용했습니다.
