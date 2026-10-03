@@ -3,7 +3,7 @@ import path from 'node:path';
 // Explicit allowlist: no credentials, runtime databases, history, tests or logs.
 const files = [
   'dwnc-app/index.html','dwnc-app/app.css','dwnc-app/app.js','dwnc-app/api.js','dwnc-app/domain.js',
-  'dwnc-app/extended-domain.js','dwnc-app/icons.js','dwnc-app/cards.js','dwnc-app/favicon.svg','dwnc-app/server.js',
+  'dwnc-app/extended-domain.js','dwnc-app/home-character.js','dwnc-app/assets/kong-preview-v1.png','dwnc-app/icons.js','dwnc-app/cards.js','dwnc-app/favicon.svg','dwnc-app/server.js',
   'backend/auth.js','backend/database.js','backend/commands.js','backend/manage.js','backend/migrations/001-sports.sql',
   'package.json','package-lock.json','.env.example',
 ];

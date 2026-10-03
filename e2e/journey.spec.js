@@ -47,14 +47,72 @@ async function refresh(page) {
   await page.getByRole('button',{name:'새로고침',exact:true}).click();
   await expect(page.locator('#app')).not.toHaveAttribute('aria-busy','true');
 }
-async function noOverflow(page) {expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);}
+async function noOverflow(page) {
+  const report = await page.evaluate(() => ({ width: innerWidth, documentWidth: document.documentElement.scrollWidth, route: location.hash,
+    offenders: [...document.querySelectorAll('.shell *')].map(el => ({ className: el.className, right: el.getBoundingClientRect().right })).filter(item => item.right > innerWidth + 1).slice(0, 8) }));
+  expect(report.documentWidth <= report.width, JSON.stringify(report)).toBe(true);
+}
 
 test('actual mobile signup → two-user matching → result/stamp → logout/login and shared persistence',async ({browser,page}) => {
   const errors = [];page.on('pageerror',error => errors.push(error.message));
   await signup(page,'브라우저 모집자','browser-host@example.test');
-  await page.locator('#note-form [name="note"]').fill('오늘 QA 한 줄');
-  await page.locator('#note-form button[type="submit"]').click();
-  await expect(page.locator('#note-form [name="note"]')).toHaveValue('오늘 QA 한 줄');
+  await expect(page.locator('.home-profile')).toContainText('매너지수');
+  await expect(page.locator('.home-profile')).toContainText('주활동 지역');
+  await expect(page.locator('.home-profile')).toContainText('관악구');
+  await expect(page.locator('.home-profile')).toContainText('연령대');
+  await expect(page.locator('.home-profile')).toContainText('20대');
+  await expect(page.locator('.home-profile')).toContainText('경기 수');
+  await expect(page.locator('.home-profile')).toContainText('승률');
+  await expect(page.locator('.home-profile')).toContainText('MVP 선정');
+  await expect(page.locator('.home-profile')).toContainText('누적 거리');
+  await expect(page.locator('#note-form')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'근처 자리',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'TENNIS',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'콩 성장 상태',exact:true})).toBeVisible();
+  await expect(page.locator('.home-equipment-slot.tennis')).toContainText('라켓 레벨');
+  await expect(page.locator('.home-equipment-slot.futsal')).toContainText('축구공 레벨');
+  await expect(page.locator('.home-equipment-slot.running')).toContainText('러닝화 레벨');
+  await expect(page.locator('.home-growth-activity dd')).toHaveText(['0회', '0회', '0회']);
+  await expect(page.locator('.home-kong-name')).toHaveText('콩식이');
+  await page.getByRole('button',{name:'콩 닉네임 변경',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'콩 닉네임'})).toBeVisible();
+  await page.getByRole('textbox',{name:'닉네임',exact:true}).fill('   ');
+  await page.getByRole('button',{name:'저장',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'콩 닉네임'})).toBeVisible();
+  await page.getByRole('textbox',{name:'닉네임',exact:true}).fill('  콩 <친구>  ');
+  await page.getByRole('button',{name:'저장',exact:true}).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.home-kong-name')).toHaveText('콩 <친구>');
+  await expect(page.getByRole('heading',{name:'콩 성장 상태',exact:true})).toBeVisible();
+  await page.reload();
+  await page.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+  await expect(page.locator('.home-kong-name')).toHaveText('콩 <친구>');
+  await page.getByRole('button',{name:'내 플레이 프로필 보기',exact:true}).press('Enter');
+  await expect(page.getByRole('heading',{name:'내 플레이 프로필',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'홈 프로필 이미지 변경',exact:true}).click();
+  await expect(page.getByRole('dialog',{name:'홈 프로필 이미지'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'프로필 사진',exact:true})).toBeDisabled();
+  await page.locator('#home-profile-photo').setInputFiles('dwnc-app/assets/kong-preview-v1.png');
+  await expect(page.locator('.home-avatar')).toHaveClass('home-avatar photo');
+  await expect(page.locator('.home-avatar img')).toHaveAttribute('src', /^data:image\/jpeg;base64,/);
+  await page.reload();
+  await expect(page.locator('.home-avatar')).toHaveClass('home-avatar photo');
+  await page.getByRole('button',{name:'홈 프로필 이미지 변경',exact:true}).click();
+  await page.getByRole('button',{name:'콩 캐릭터',exact:true}).click();
+  await expect(page.locator('.home-avatar img')).toHaveAttribute('src','./assets/kong-preview-v1.png');
+  await page.reload();
+  await expect(page.locator('.home-avatar')).toHaveClass('home-avatar kong');
+  await page.screenshot({path:'test-results/home-glass-front.png',fullPage:true,animations:'disabled'});
+  await page.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+  await page.screenshot({path:'test-results/home-glass-back.png',fullPage:true,animations:'disabled'});
+  await page.getByRole('button',{name:'내 플레이 프로필 보기',exact:true}).click();
+  await page.locator('.home-shortcut[href="#/groups"]').click();
+  await expect(page.locator('.content[data-page="groups"]')).toBeVisible();
+  await route(page,'home');
+  await page.locator('.home-shortcut[href="#/ranking"]').click();
+  await expect(page.locator('.content[data-page="ranking"]')).toBeVisible();
+  await route(page,'home');
   await route(page,'matches');
   await page.locator('.head [data-action="create"]').click();
   const form = page.locator('#create-form');
@@ -70,6 +128,8 @@ test('actual mobile signup → two-user matching → result/stamp → logout/log
   const otherContext = await browser.newContext({viewport:{width:390,height:844}});
   const other = await otherContext.newPage();other.on('pageerror',error => errors.push(error.message));
   await signup(other,'브라우저 참여자','browser-player@example.test');
+  await other.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+  await expect(other.locator('.home-kong-name')).toHaveText('콩식이');
   await route(other,'matches');
   await other.locator('[data-action="details"]',{hasText:'브라우저 QA 테니스'}).click();
   await other.locator('[data-action="apply"]').click();
@@ -99,13 +159,32 @@ test('actual mobile signup → two-user matching → result/stamp → logout/log
   await expect(page.locator('#auth-form')).toBeVisible();
   expect((await page.request.get('/api/state')).status()).toBe(401);
   await login(page,'browser-host@example.test');
-  await expect(page.locator('#note-form [name="note"]')).toHaveValue('오늘 QA 한 줄');
-  await page.reload();await expect(page.locator('#note-form [name="note"]')).toHaveValue('오늘 QA 한 줄');
+  await expect(page.locator('.home-profile')).toContainText('브라우저 모집자');
+  await expect(page.locator('.home-profile__front .home-sport.tennis')).toContainText('100%');
+  await page.reload();await expect(page.locator('.home-profile__front .home-sport.tennis')).toContainText('100%');
+  await page.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+  await expect(page.locator('.home-growth-activity .tennis dd')).toHaveText('1회');
+  await expect(page.locator('.home-growth-activity .futsal dd')).toHaveText('0회');
+  await expect(page.locator('.home-kong-name')).toHaveText('콩 <친구>');
+  await page.getByRole('button',{name:'프로필에서 자세히 보기',exact:true}).click();
+  await expect(page.locator('.content[data-page="profile"]')).toBeVisible();
   await route(other,'profile');await expect(other.locator('.stamp')).not.toHaveCount(0);
   // Exercise all real entry points and inherited mobile constraints.
-  for (const width of [320,390,1280]) {
-    await page.setViewportSize({width,height:844});
-    for (const name of ['home','matches','activity','ranking','profile','people','groups','notifications']) {await route(page,name);await noOverflow(page);}
+  for (const width of [320,390,402,1280]) {
+    await page.setViewportSize({width,height:width === 402 ? 874 : 844});
+    for (const name of ['home','matches','activity','ranking','profile','people','groups','notifications']) {
+      await route(page,name);await noOverflow(page);
+      if (name === 'home') {
+        const frontSize = await page.locator('.home-profile').evaluate(el => ({ height: el.offsetHeight, width: el.offsetWidth, actionsTop: el.nextElementSibling.offsetTop }));
+        await page.getByRole('button',{name:'콩 성장 상태 보기',exact:true}).click();
+        await expect(page.getByRole('heading',{name:'콩 성장 상태',exact:true})).toBeVisible();
+        await noOverflow(page);
+        expect(await page.locator('.home-profile').evaluate(el => ({ height: el.offsetHeight, width: el.offsetWidth, actionsTop: el.nextElementSibling.offsetTop }))).toEqual(frontSize);
+        expect(await page.locator('.home-profile__back').evaluate(el => el.offsetHeight)).toBe(frontSize.height);
+        await page.getByRole('button',{name:'내 플레이 프로필 보기',exact:true}).click();
+        expect(await page.locator('.home-profile').evaluate(el => ({ height: el.offsetHeight, width: el.offsetWidth, actionsTop: el.nextElementSibling.offsetTop }))).toEqual(frontSize);
+      }
+    }
   }
   expect(errors).toEqual([]);
   await otherContext.close();
