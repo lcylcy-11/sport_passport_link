@@ -7,6 +7,7 @@ import { renderKongCharacter, renderKongHistory } from './kong-profile-view.js';
 import { renderPassportCard } from './passport-view.js';
 import { regionalRanking, matchingSuggestions, isPastSchedule } from './service-model.js';
 import { createChatController } from './chat-view.js';
+import { saveSignupRecovery, loadSignupRecovery, clearSignupRecovery } from './signup-recovery.js';
 
 installIcons();
 const root = document.getElementById('app');
@@ -25,6 +26,13 @@ const pages = ['home', 'matches', 'community', 'ranking', 'notifications'];
 const pageTitle = { community: '커뮤니티', home: '홈', matches: '매칭', activity: '내 운동', people: '친구', groups: '그룹', profile: '프로필', ranking: '랭킹', notifications: '알림' };
 let state, revision = 0, loading = true, loadError = null, authMode = 'login', pending = false, modal = null, flash = null, cardUrl = null, cardRequestId = 0;
 let signupCompletion = null;
+let signupRecoveryStored = false;
+function signupStorage() { try { return window.sessionStorage; } catch { return null; } }
+function setSignupCompletion(setup) {
+  signupCompletion = setup;
+  signupRecoveryStored = setup ? saveSignupRecovery(signupStorage(), setup) : false;
+  if (!setup) clearSignupRecovery(signupStorage());
+}
 const emptyFilters = () => ({ sport: '', format: '', region: '', venue: '', date: '', time: '', level: '', query: '', openOnly: true, minOpenSeats: '' });
 let filters = emptyFilters();
 const drafts = new Map();
@@ -39,6 +47,7 @@ const chat = createChatController({
   request: api.request, getState: () => state,
   save: (...args) => save(...args), renderApp: () => render(),
   refreshState: refreshChatState,
+  onUnauthorized: async () => { await loadState(); if (!state) showToast('로그인이 만료됐어요. 다시 로그인해 주세요.', true); },
   openWorkout: id => openModal({ type: 'details', id }),
   notify: (message, error = false) => showToast(message, Boolean(error)),
 });
@@ -63,7 +72,7 @@ async function refreshChatState({protectForms = false} = {}) {
   const result = await api.request('/api/state');
   if (state?.activeUserId !== source) return;
   if (result.state.activeUserId !== source) {
-    chat.dispose(); modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false;
+    chat.dispose(); modal = null; modalStack.length = 0; drafts.clear(); setSignupCompletion(null); profileEditOpen = false;
     cancelKongReaction(true); homeCardFlipped = false;
     state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision; render();
     throw new api.RequestError(409,'다른 계정으로 변경되었습니다.','SESSION_CHANGED');
@@ -137,17 +146,25 @@ async function loadState() {
   if (ownsLock) { pending = true; root.inert = true; root.setAttribute('aria-busy','true'); }
   try {
     const result = await api.request('/api/state');
-    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false; homeCardFlipped = false; }
+    if (state && result.state.activeUserId !== state.activeUserId) { modal = null; modalStack.length = 0; drafts.clear(); setSignupCompletion(null); profileEditOpen = false; homeCardFlipped = false; }
     const newRecord = markNewConfirmedRecord(previous,result.state);
     state = {...result.state,demoControls:result.demoControls === true}; revision = result.revision; loadError = null;
-    if (signupCompletion && signupCompletion.ownerId !== state.activeUserId) signupCompletion = null;
+    if (signupCompletion && signupCompletion.ownerId !== state.activeUserId) setSignupCompletion(null);
+    const currentProfile = state.users.find(person => person.id === state.activeUserId);
+    if (signupCompletion && currentProfile && (currentProfile.region !== '미설정' || currentProfile.ageRange !== '미입력')) setSignupCompletion(null);
+    if (!signupCompletion) {
+      const restored = loadSignupRecovery(signupStorage(), state.activeUserId);
+      const me = state.users.find(person => person.id === state.activeUserId);
+      if (restored && me?.region === '미설정' && me.ageRange === '미입력') { signupCompletion = restored; signupRecoveryStored = true; }
+      else if (restored) clearSignupRecovery(signupStorage());
+    }
     if (newRecord) {
       modal = null; modalStack.length = 0;
       if (location.hash !== '#/home') history.replaceState(null,'','#/home');
     }
     if (modal?.id && ['details','result'].includes(modal.type) && !match(modal.id)) modal = null;
   } catch (error) {
-    if (error.status === 401) { state = null; modal = null; drafts.clear(); signupCompletion = null; authMode = 'login'; }
+    if (error.status === 401) { state = null; modal = null; drafts.clear(); setSignupCompletion(null); authMode = 'login'; }
     else loadError = error.message;
   } finally { loading = false; render(); if (ownsLock) { pending = false; root.inert = false; root.removeAttribute('aria-busy'); } }
 }
@@ -166,7 +183,7 @@ async function save(type, payload, message, icon = 'check', { closeModalOnSucces
     const reward = newRecord && type.startsWith('result.') && state.activeUserId === sourceUserId;
     if (reward) { modal = null; modalStack.length = 0; }
     if (result.id) pulseId = result.id;
-    if (type === 'profile.update' && signupCompletion?.ownerId === sourceUserId) signupCompletion = null;
+    if (type === 'profile.update' && signupCompletion?.ownerId === sourceUserId) setSignupCompletion(null);
     if (closeModalOnSuccess) modal = null;
     if (submittedDraftKey) drafts.delete(submittedDraftKey);
     if (!modal) modalStack.length = 0;
@@ -175,7 +192,7 @@ async function save(type, payload, message, icon = 'check', { closeModalOnSucces
     else render();
     return result;
   } catch (error) {
-    if (error.status === 401) { cancelKongReaction(true); state = null; modal = null; drafts.clear(); signupCompletion = null; authMode = 'login'; render(); }
+    if (error.status === 401) { cancelKongReaction(true); state = null; modal = null; drafts.clear(); setSignupCompletion(null); authMode = 'login'; render(); }
     else if (['REVISION_CONFLICT','SESSION_CHANGED'].includes(error.code)) await loadState();
     throw error;
   } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }
@@ -211,7 +228,7 @@ async function saveDemoRecords(action) {
 function signupRecovery() {
   if (!signupCompletion || signupCompletion.ownerId !== state?.activeUserId) return '';
   const setup = signupCompletion;
-  return `<div class="banner bad signup-recovery" role="status"><span>계정은 만들어졌어요. 활동 정보를 다시 저장해 주세요.<br>${esc(setup.region)} · ${esc(setup.ageRange)} · ${setup.chosenSports.map(sport => esc(old.SPORT_LABEL[sport])).join(' · ')}</span><button type="button" class="btn small" data-action="retry-signup-profile">가입 정보 다시 저장</button></div>`;
+  return `<div class="banner bad signup-recovery" role="status"><span>계정은 만들어졌어요. 활동 정보를 다시 저장해 주세요.<br>${esc(setup.region)} · ${esc(setup.ageRange)} · ${setup.chosenSports.map(sport => esc(old.SPORT_LABEL[sport])).join(' · ')}${signupRecoveryStored ? '' : '<br>브라우저 저장소를 사용할 수 없어 새로고침 전에 다시 저장해 주세요.'}</span><button type="button" class="btn small" data-action="retry-signup-profile">가입 정보 다시 저장</button></div>`;
 }
 
 function authPage() {
@@ -609,7 +626,7 @@ root.addEventListener('click', async (event) => {
   let exportRequestId = null;
   try {
     if (action.startsWith('chat-')) { await chat.handleAction(action,button); return; }
-    if (action === 'open-chat') { modal = null; modalStack.length = 0; await chat.open({kind,...(kind === 'direct' ? {peerId:id} : kind === 'group' ? {groupId:id} : {matchId:id})}); }
+    if (action === 'open-chat') { const opened = await chat.open({kind,...(kind === 'direct' ? {peerId:id} : kind === 'group' ? {groupId:id} : {matchId:id})}); if (opened) { modal = null; modalStack.length = 0; render(); } }
     else if (action === 'result-decide') { await save('result.decide',{proposalId:id,version:Number(button.dataset.version),decision},decision === 'accepted' ? '기록에 동의했어요' : '기록 제안을 거절했어요'); }
     else if (action === 'close') closeModal();
     else if (action === 'community-tab') { const next = ['friends','groups','chats'].includes(id) ? id : 'friends'; const hash = `#/community?tab=${next}`; if(location.hash !== hash) location.hash = hash; else { syncCommunityRoute(); render(); } }
@@ -639,7 +656,7 @@ root.addEventListener('click', async (event) => {
     else if (action === 'logout') {
       cancelKongReaction(true);
       pending = true; root.inert = true;
-      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); signupCompletion = null; profileEditOpen = false; homeCardFlipped = false; lastPage = null; authMode = 'login'; render(); }
+      try { await api.request('/api/auth/sign-out',{}); state = null; modal = null; modalStack.length = 0; drafts.clear(); setSignupCompletion(null); profileEditOpen = false; homeCardFlipped = false; lastPage = null; authMode = 'login'; render(); }
       finally { pending = false; root.inert = false; }
     }
     else if (action === 'create') { openModal({ type: 'create' }, button); setCreateControls(); restoreDrafts(); setCreateVisibility(); }
@@ -715,7 +732,7 @@ root.addEventListener('submit', async (event) => {
       try {
         const authenticated = await api.request(signup ? '/api/auth/sign-up/email' : '/api/auth/sign-in/email', {email:values.email.trim(),password:values.password,...(signup ? {name:values.name.trim()} : {})});
         // Password fields are discarded immediately after authentication.
-        signupCompletion = signup ? { ownerId: authenticated.user.id, region: values.region, ageRange: values.ageRange, chosenSports: formData.getAll('chosenSports') } : null;
+        if (signup) setSignupCompletion({ ownerId: authenticated.user.id, region: values.region, ageRange: values.ageRange, chosenSports: formData.getAll('chosenSports') });
         form.reset(); submittedForm = null;
         await loadState();
       } finally { pending = false; root.inert = false; root.removeAttribute('aria-busy'); }

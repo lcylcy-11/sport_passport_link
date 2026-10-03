@@ -131,6 +131,16 @@ test('signup profile failure preserves password-free setup and retries the exist
   await expect(recovery).toContainText('마포구');
   await expect(recovery).toContainText('30대');
   await expect(recovery).toContainText('러닝');
+  const ownerId = (await snapshot(page)).state.activeUserId;
+  const stored = await page.evaluate(() => sessionStorage.getItem('dwnc.signup-recovery.v1'));
+  expect(stored).not.toContain(password);
+  expect(stored).not.toContain('defect-signup@example.test');
+  await page.reload();
+  await expect(retry).toBeVisible();
+  await expect(recovery).toContainText('마포구');
+  await expect(recovery).toContainText('30대');
+  await expect(recovery).toContainText('러닝');
+  expect((await snapshot(page)).state.activeUserId).toBe(ownerId);
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(retry).toBeInViewport();
@@ -143,6 +153,7 @@ test('signup profile failure preserves password-free setup and retries the exist
   const current = await snapshot(page), user = current.state.users.find(user => user.id === current.state.activeUserId);
   expect(user.region).toBe('마포구'); expect(user.ageRange).toBe('30대'); expect(user.chosenSports).toEqual(['running']);
   expect(signups).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem('dwnc.signup-recovery.v1'))).toBeNull();
 });
 
 test('signup completion retry detects a shared-cookie account change without overwriting it', async ({ page, context }) => {

@@ -8,7 +8,7 @@ const mapLink = details => `https://www.google.com/maps/search/?api=1&query=${en
 const value = (form, name) => form.elements?.namedItem(name)?.value ?? '';
 
 /** Text chat writes remain independent of the sports revision and app renders. */
-export function createChatController({ request, getState, save, renderApp, openWorkout, notify, refreshState = async () => {} }) {
+export function createChatController({ request, getState, save, renderApp, openWorkout, notify, refreshState = async () => {}, onUnauthorized = async () => {} }) {
   let account = null, roomId = null, rooms = [], roomsLoaded = false, epoch = 0;
   let mounted = null, surfaceRoot = null, timer = null, fetching = null, visibilityDocument = null;
   let appointmentOpen = false, replacement = null, errorText = '', loadingEarlier = false;
@@ -37,6 +37,13 @@ export function createChatController({ request, getState, save, renderApp, openW
     appointmentOpen = false; replacement = null; errorText = ''; mounted = null;
   }
   function guard(id, actor, token) { return currentState().activeUserId === actor && account === actor && roomId === id && epoch === token; }
+  async function recoverUnauthorized(error) {
+    if (error.status !== 401) return false;
+    dispose();
+    await onUnauthorized();
+    syncAccount();
+    return true;
+  }
   function messageHTML(message) {
     const mine = message.senderId === account;
     const time = message.createdAt ? new Date(message.createdAt).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }) : '';
@@ -177,6 +184,7 @@ export function createChatController({ request, getState, save, renderApp, openW
         } else if (listChanged) renderApp();
       } catch (error) {
         if (!guard(id, actor, token)) return;
+        if (await recoverUnauthorized(error)) return;
         if ([401, 403].includes(error.status) && id) { caches.delete(id); rooms = rooms.filter(item => item.id !== id); }
         errorText = error.message || '대화를 불러오지 못했어요.'; if (id) paint();
       }
@@ -222,7 +230,7 @@ export function createChatController({ request, getState, save, renderApp, openW
       const response = await request('/api/chats/open', payload);
       if (currentState().activeUserId !== actor || epoch !== token) return false;
       pendingOpens.delete(contextKey); rooms = [...rooms.filter(item => item.id !== response.room.id), response.room]; routeTo(response.room.id); return true;
-    } catch (error) { if (currentState().activeUserId === actor) notify(error.message, true); return false; }
+    } catch (error) { if (currentState().activeUserId === actor && epoch === token && !await recoverUnauthorized(error)) notify(error.message, true); return false; }
   }
   async function earlier() {
     if (loadingEarlier || !roomId || !cache().hasMore) return;
@@ -234,7 +242,7 @@ export function createChatController({ request, getState, save, renderApp, openW
       const messages = result.messages || [];
       if (messages.length) data.history = messages.slice(-100);
       data.hasMore = result.hasMore ?? messages.length === 100; paint({ earlier: true });
-    } catch (error) { if (guard(id, actor, token)) notify(error.message, true); }
+    } catch (error) { if (guard(id, actor, token) && !await recoverUnauthorized(error)) notify(error.message, true); }
     finally { loadingEarlier = false; }
   }
   async function handleAction(action, button) {
@@ -276,7 +284,7 @@ export function createChatController({ request, getState, save, renderApp, openW
       const composer = form.elements?.namedItem('text');
       if (composer?.value.trim() === text) { composer.value = ''; drafts.set(draftKey, ''); }
       errorText = ''; paint({ forceBottom: !cache().history });
-    } catch (error) { if (guard(id, actor, token)) { sendErrors.set(draftKey,'전송하지 못했어요. 보내기를 누르면 같은 메시지를 다시 시도해요.'); paint(); notify(error.message, true); } }
+    } catch (error) { if (guard(id, actor, token) && !await recoverUnauthorized(error)) { sendErrors.set(draftKey,'전송하지 못했어요. 보내기를 누르면 같은 메시지를 다시 시도해요.'); paint(); notify(error.message, true); } }
     finally { outgoing.busy = false; if (submit?.isConnected !== false) submit && (submit.disabled = false); }
   }
   async function submitAppointment(form) {
